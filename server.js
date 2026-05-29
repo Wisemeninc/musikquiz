@@ -511,6 +511,7 @@ io.on('connection', (socket) => {
       title: currentSong.title,
       artist: currentSong.artist,
       trackId: currentSong.trackId,
+      albumArt: currentSong.albumArt,
       votes: results
     });
     callback({ addedBy: currentSong.addedBy, votes: results });

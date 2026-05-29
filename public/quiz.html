@@ -70,6 +70,9 @@
 
       <div class="card" id="answer-card" style="display:none;">
         <h2>Answer</h2>
+        <div id="answer-album-art" class="answer-album-art" style="display:none;">
+          <img id="answer-cover-img" src="" alt="Album cover" />
+        </div>
         <div id="answer-song-info" class="answer-song-info" style="display:none;">
           <p class="answer-song-title"><strong id="answer-song-title"></strong></p>
           <p class="answer-song-artist" id="answer-song-artist"></p>
@@ -276,15 +279,24 @@
     socket.on('next-song', ({ currentIndex, currentSong, totalSongs }) => {
       hasVoted = false;
       document.getElementById('answer-card').style.display = 'none';
+      document.getElementById('answer-card').classList.remove('reveal-animate');
       document.getElementById('answer-song-info').style.display = 'none';
+      document.getElementById('answer-album-art').style.display = 'none';
       document.getElementById('vote-status').textContent = '';
       playSong(currentSong, currentIndex, totalSongs);
       renderVoteButtons();
     });
 
-    socket.on('answer-revealed', ({ addedBy, title, artist, trackId, votes }) => {
+    socket.on('answer-revealed', ({ addedBy, title, artist, trackId, albumArt, votes }) => {
       document.getElementById('answer-card').style.display = 'block';
+      document.getElementById('answer-card').classList.add('reveal-animate');
       document.getElementById('answer-name').textContent = addedBy;
+      if (albumArt) {
+        document.getElementById('answer-cover-img').src = albumArt;
+        document.getElementById('answer-album-art').style.display = 'block';
+      } else {
+        document.getElementById('answer-album-art').style.display = 'none';
+      }
       if (title) {
         const spotifyUrl = `https://open.spotify.com/track/${trackId}`;
         document.getElementById('answer-song-title').innerHTML = `<a href="${spotifyUrl}" target="_blank" rel="noopener">${title}</a>`;

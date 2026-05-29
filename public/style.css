@@ -695,6 +695,18 @@ input[type="password"]:focus {
   background: #1ed760;
 }
 
+.btn-delete {
+  background: #3a1a1a;
+  color: #e94560;
+  border: 1px solid #e94560;
+  font-weight: 600;
+}
+
+.btn-delete:hover {
+  background: #e94560;
+  color: #fff;
+}
+
 .quiz-history-name {
   font-weight: 500;
   color: #fff;

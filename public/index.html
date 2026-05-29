@@ -120,7 +120,7 @@
         const resumeBtn = q.state !== 'finished'
           ? `<a href="/master/${q.id}" class="btn btn-small btn-resume" onclick="event.stopPropagation()">Resume</a>`
           : '';
-        return `<div class="quiz-history-entry">
+        return `<div class="quiz-history-entry" id="entry-${q.id}">
           <div class="quiz-history-item" onclick="toggleQuizSongs('${q.id}', this)">
             <div class="quiz-history-info">
               <span class="quiz-history-name">${q.name}</span>
@@ -128,6 +128,7 @@
             </div>
             <div class="quiz-history-actions">
               ${resumeBtn}
+              <button class="btn btn-small btn-delete" onclick="event.stopPropagation(); deleteQuiz('${q.id}')">Delete</button>
               <span class="quiz-state ${stateClass}">${stateLabel}</span>
             </div>
           </div>
@@ -135,6 +136,20 @@
         </div>`;
       }).join('');
       document.getElementById('quiz-history').innerHTML = html;
+    }
+
+    async function deleteQuiz(quizId) {
+      if (!confirm('Delete this quiz?')) return;
+      const res = await fetch('/api/quiz/' + quizId, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: masterPassword })
+      });
+      if (res.ok) {
+        document.getElementById('entry-' + quizId).remove();
+      } else {
+        alert('Failed to delete quiz');
+      }
     }
 
     async function toggleQuizSongs(quizId, el) {

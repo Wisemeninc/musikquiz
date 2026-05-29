@@ -300,6 +300,20 @@ app.post('/api/quiz/:id', express.json(), (req, res) => {
   });
 });
 
+app.delete('/api/quiz/:id', express.json(), (req, res) => {
+  const { password } = req.body;
+  if (password !== MASTER_PASSWORD) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  const quiz = quizzes[req.params.id];
+  if (!quiz) return res.status(404).json({ error: 'Quiz not found' });
+
+  delete quizzes[req.params.id];
+  const filePath = getQuizFilePath(req.params.id);
+  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  res.json({ success: true });
+});
+
 // ─── Socket.IO ─────────────────────────────────────────────────────────────────
 
 io.on('connection', (socket) => {

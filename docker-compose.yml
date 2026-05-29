@@ -2,7 +2,7 @@ services:
   musikquiz:
     build: .
     volumes:
-      - quiz-data:/app/data
+      - ./data:/app/data
     environment:
       - PORT=3000
       - DATA_DIR=/app/data
@@ -22,6 +22,3 @@ services:
 networks:
   traefik-public:
     external: true
-
-volumes:
-  quiz-data:

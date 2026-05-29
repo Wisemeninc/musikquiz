@@ -704,6 +704,80 @@ input[type="password"]:focus {
   color: #27ae60;
 }
 
+/* Quiz History Song List */
+.quiz-history-entry {
+  margin-bottom: 8px;
+}
+
+.quiz-history-item {
+  cursor: pointer;
+}
+
+.quiz-songs-list {
+  padding: 8px 12px;
+  background: #060e1a;
+  border-radius: 0 0 8px 8px;
+  margin-top: -4px;
+}
+
+.quiz-song-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid #1a2a44;
+}
+
+.quiz-song-row:last-child {
+  border-bottom: none;
+}
+
+.quiz-song-cover {
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.quiz-song-details {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.quiz-song-title {
+  color: #fff;
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.quiz-song-title:hover {
+  color: #1db954;
+}
+
+.quiz-song-artist {
+  color: #888;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.quiz-song-added-by {
+  color: #e94560;
+  font-size: 0.8rem;
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 /* Responsive */
 @media (max-width: 500px) {
   body {

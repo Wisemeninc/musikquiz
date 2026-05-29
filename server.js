@@ -257,6 +257,49 @@ app.post('/api/quizzes', express.json(), (req, res) => {
   res.json({ quizzes: list });
 });
 
+app.post('/api/quiz/:id', express.json(), (req, res) => {
+  const { password } = req.body;
+  if (password !== MASTER_PASSWORD) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  const quiz = quizzes[req.params.id];
+  if (!quiz) return res.status(404).json({ error: 'Quiz not found' });
+
+  const songs = (quiz.queue || []).map(s => ({
+    title: s.title,
+    artist: s.artist,
+    albumArt: s.albumArt,
+    trackId: s.trackId,
+    addedBy: s.addedBy
+  }));
+
+  const scores = {};
+  for (const c of Object.values(quiz.contestants || {})) {
+    scores[c.username] = 0;
+  }
+  for (const [idx, songVotes] of Object.entries(quiz.votes || {})) {
+    const song = quiz.queue[parseInt(idx)];
+    if (!song) continue;
+    for (const [, votedFor] of Object.entries(songVotes)) {
+      if (votedFor === song.addedBy) {
+        scores[votedFor] = (scores[votedFor] || 0) + 1;
+      }
+    }
+  }
+
+  res.json({
+    id: quiz.id,
+    name: quiz.name,
+    state: quiz.state,
+    createdAt: quiz.createdAt,
+    contestants: Object.values(quiz.contestants || {}).map(c => c.username),
+    songs,
+    scores: Object.entries(scores)
+      .map(([username, score]) => ({ username, score }))
+      .sort((a, b) => b.score - a.score)
+  });
+});
+
 // ─── Socket.IO ─────────────────────────────────────────────────────────────────
 
 io.on('connection', (socket) => {

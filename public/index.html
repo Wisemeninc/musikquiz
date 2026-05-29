@@ -117,15 +117,59 @@
         const stateLabel = q.state === 'lobby' ? 'Lobby' : q.state === 'playing' ? 'Playing' : 'Finished';
         const stateClass = q.state === 'finished' ? 'state-finished' : q.state === 'playing' ? 'state-playing' : 'state-lobby';
         const date = q.createdAt ? new Date(q.createdAt).toLocaleDateString() : '';
-        return `<a href="/master/${q.id}" class="quiz-history-item">
-          <div class="quiz-history-info">
-            <span class="quiz-history-name">${q.name}</span>
-            <span class="quiz-history-meta">${q.contestants.length} players &middot; ${q.songCount} songs &middot; ${date}</span>
+        return `<div class="quiz-history-entry">
+          <div class="quiz-history-item" onclick="toggleQuizSongs('${q.id}', this)">
+            <div class="quiz-history-info">
+              <span class="quiz-history-name">${q.name}</span>
+              <span class="quiz-history-meta">${q.contestants.length} players &middot; ${q.songCount} songs &middot; ${date}</span>
+            </div>
+            <span class="quiz-state ${stateClass}">${stateLabel}</span>
           </div>
-          <span class="quiz-state ${stateClass}">${stateLabel}</span>
-        </a>`;
+          <div class="quiz-songs-list" id="songs-${q.id}" style="display:none;"></div>
+        </div>`;
       }).join('');
       document.getElementById('quiz-history').innerHTML = html;
+    }
+
+    async function toggleQuizSongs(quizId, el) {
+      const container = document.getElementById('songs-' + quizId);
+      if (container.style.display === 'block') {
+        container.style.display = 'none';
+        return;
+      }
+      if (container.dataset.loaded) {
+        container.style.display = 'block';
+        return;
+      }
+      container.innerHTML = '<p class="hint">Loading songs...</p>';
+      container.style.display = 'block';
+      const res = await fetch('/api/quiz/' + quizId, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: masterPassword })
+      });
+      if (!res.ok) {
+        container.innerHTML = '<p class="hint">Failed to load</p>';
+        return;
+      }
+      const data = await res.json();
+      container.dataset.loaded = 'true';
+      if (!data.songs || data.songs.length === 0) {
+        container.innerHTML = '<p class="hint">No songs played</p>';
+        return;
+      }
+      const songsHtml = data.songs.map((s, i) => {
+        const spotifyUrl = `https://open.spotify.com/track/${s.trackId}`;
+        return `<div class="quiz-song-row">
+          <img class="quiz-song-cover" src="${s.albumArt || ''}" alt="" />
+          <div class="quiz-song-details">
+            <a href="${spotifyUrl}" target="_blank" rel="noopener" class="quiz-song-title">${s.title}</a>
+            <span class="quiz-song-artist">${s.artist}</span>
+          </div>
+          <span class="quiz-song-added-by">${s.addedBy}</span>
+        </div>`;
+      }).join('');
+      container.innerHTML = songsHtml;
     }
 
     // Create quiz

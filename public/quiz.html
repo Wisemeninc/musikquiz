@@ -93,6 +93,10 @@
         <h2>&#127942; Final Scoreboard</h2>
         <div id="scoreboard"></div>
       </div>
+      <div class="card">
+        <h2>All Songs</h2>
+        <div id="finished-songs-list"></div>
+      </div>
     </div>
   </div>
 
@@ -287,6 +291,17 @@
       renderVoteButtons();
     });
 
+    socket.on('prev-song', ({ currentIndex, currentSong, totalSongs }) => {
+      hasVoted = false;
+      document.getElementById('answer-card').style.display = 'none';
+      document.getElementById('answer-card').classList.remove('reveal-animate');
+      document.getElementById('answer-song-info').style.display = 'none';
+      document.getElementById('answer-album-art').style.display = 'none';
+      document.getElementById('vote-status').textContent = '';
+      playSong(currentSong, currentIndex, totalSongs);
+      renderVoteButtons();
+    });
+
     socket.on('answer-revealed', ({ addedBy, title, artist, trackId, albumArt, votes }) => {
       document.getElementById('answer-card').style.display = 'block';
       document.getElementById('answer-card').classList.add('reveal-animate');
@@ -316,8 +331,8 @@
       document.getElementById('answer-votes').innerHTML = votesHtml;
     });
 
-    socket.on('quiz-finished', ({ scores }) => {
-      showFinishedView(scores);
+    socket.on('quiz-finished', ({ scores, songs }) => {
+      showFinishedView(scores, songs);
     });
 
     // Playing view
@@ -365,7 +380,7 @@
       });
     }
 
-    function showFinishedView(scores) {
+    function showFinishedView(scores, songs) {
       document.getElementById('lobby-view').style.display = 'none';
       document.getElementById('playing-view').style.display = 'none';
       document.getElementById('finished-view').style.display = 'block';
@@ -380,6 +395,23 @@
         </div>`;
       }).join('');
       document.getElementById('scoreboard').innerHTML = html;
+
+      // Render all songs
+      const songList = songs || revealedSongs;
+      if (songList.length > 0) {
+        const songsHtml = songList.map((s, i) => {
+          const spotifyUrl = `https://open.spotify.com/track/${s.trackId}`;
+          return `<div class="quiz-song-row">
+            <img class="quiz-song-cover" src="${s.albumArt || ''}" alt="" />
+            <div class="quiz-song-details">
+              <a href="${spotifyUrl}" target="_blank" rel="noopener" class="quiz-song-title">${i + 1}. ${s.title}</a>
+              <span class="quiz-song-artist">${s.artist}</span>
+            </div>
+            <span class="quiz-song-added-by">${s.addedBy}</span>
+          </div>`;
+        }).join('');
+        document.getElementById('finished-songs-list').innerHTML = songsHtml;
+      }
     }
 
     function renderPreviousSongs() {

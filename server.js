@@ -498,6 +498,31 @@ io.on('connection', (socket) => {
     console.log(`Quiz ${quizId} started with ${allSongs.length} songs`);
   });
 
+  // ─── Previous Song ──────────────────────────────────────────────────────────
+  socket.on('prev-song', ({ quizId }, callback) => {
+    const quiz = quizzes[quizId];
+    if (!quiz) return callback({ error: 'Quiz not found' });
+    if (socket.id !== quiz.masterId) return callback({ error: 'Not the quiz master' });
+    if (quiz.currentIndex <= 0) return callback({ error: 'Already at first song' });
+
+    quiz.currentIndex--;
+    saveQuiz(quiz);
+    const song = quiz.queue[quiz.currentIndex];
+    // Full info to master
+    io.to(quiz.masterId).emit('prev-song', {
+      currentIndex: quiz.currentIndex,
+      currentSong: sanitizeSong(song),
+      totalSongs: quiz.queue.length
+    });
+    // Stripped info to contestants
+    socket.to(`quiz-${quizId}`).emit('prev-song', {
+      currentIndex: quiz.currentIndex,
+      currentSong: sanitizeSongForContestant(song),
+      totalSongs: quiz.queue.length
+    });
+    callback({ currentIndex: quiz.currentIndex });
+  });
+
   // ─── Next Song ─────────────────────────────────────────────────────────────
   socket.on('next-song', ({ quizId }, callback) => {
     const quiz = quizzes[quizId];
@@ -510,7 +535,14 @@ io.on('connection', (socket) => {
       quiz.state = 'finished';
       saveQuiz(quiz);
       const scores = calculateScores(quiz);
-      io.to(`quiz-${quizId}`).emit('quiz-finished', { scores });
+      const songs = quiz.queue.map(s => ({
+        title: s.title,
+        artist: s.artist,
+        albumArt: s.albumArt,
+        trackId: s.trackId,
+        addedBy: s.addedBy
+      }));
+      io.to(`quiz-${quizId}`).emit('quiz-finished', { scores, songs });
       callback({ finished: true, scores });
     } else {
       saveQuiz(quiz);

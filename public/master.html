@@ -90,6 +90,7 @@
           <div id="iframe-player" style="display:none;"></div>
         </div>
         <div class="playback-controls">
+          <button class="btn btn-secondary" onclick="prevSong()">&#9664; Previous Song</button>
           <button class="btn btn-primary" onclick="revealAnswer()">Reveal Answer</button>
           <button class="btn btn-primary" onclick="nextSong()">Next Song &#9654;</button>
         </div>
@@ -121,6 +122,10 @@
       <div class="card">
         <h2>&#127942; Final Scoreboard</h2>
         <div id="scoreboard"></div>
+      </div>
+      <div class="card">
+        <h2>All Songs</h2>
+        <div id="finished-songs-list"></div>
       </div>
     </div>
 
@@ -405,7 +410,10 @@
         showPlayingView(quiz);
       } else if (quiz.state === 'finished') {
         const scores = calculateLocalScores(quiz);
-        showFinishedView(scores);
+        const songs = (quiz.queue || []).map(s => ({
+          title: s.title, artist: s.artist, albumArt: s.albumArt, trackId: s.trackId, addedBy: s.addedBy
+        }));
+        showFinishedView(scores, songs);
       }
     });
 
@@ -429,13 +437,19 @@
       playSong(currentSong, currentIndex, totalSongs);
     });
 
+    socket.on('prev-song', ({ currentIndex, currentSong, totalSongs }) => {
+      document.getElementById('answer-card').style.display = 'none';
+      document.getElementById('vote-count').textContent = '0';
+      playSong(currentSong, currentIndex, totalSongs);
+    });
+
     socket.on('vote-update', ({ voteCount, totalContestants }) => {
       document.getElementById('vote-count').textContent = voteCount;
       document.getElementById('total-contestants').textContent = totalContestants;
     });
 
-    socket.on('quiz-finished', ({ scores }) => {
-      showFinishedView(scores);
+    socket.on('quiz-finished', ({ scores, songs }) => {
+      showFinishedView(scores, songs);
     });
 
     socket.on('answer-revealed', ({ addedBy, title, artist, trackId, albumArt, votes }) => {
@@ -573,13 +587,19 @@
       });
     }
 
+    function prevSong() {
+      socket.emit('prev-song', { quizId }, (response) => {
+        if (response.error) alert(response.error);
+      });
+    }
+
     function nextSong() {
       socket.emit('next-song', { quizId }, (response) => {
         if (response.error) alert(response.error);
       });
     }
 
-    function showFinishedView(scores) {
+    function showFinishedView(scores, songs) {
       document.getElementById('lobby-view').style.display = 'none';
       document.getElementById('playing-view').style.display = 'none';
       document.getElementById('finished-view').style.display = 'block';
@@ -597,6 +617,23 @@
         </div>`;
       }).join('');
       document.getElementById('scoreboard').innerHTML = html;
+
+      // Render all songs
+      const songList = songs || masterRevealedSongs;
+      if (songList.length > 0) {
+        const songsHtml = songList.map((s, i) => {
+          const spotifyUrl = `https://open.spotify.com/track/${s.trackId}`;
+          return `<div class="quiz-song-row">
+            <img class="quiz-song-cover" src="${s.albumArt || ''}" alt="" />
+            <div class="quiz-song-details">
+              <a href="${spotifyUrl}" target="_blank" rel="noopener" class="quiz-song-title">${i + 1}. ${s.title}</a>
+              <span class="quiz-song-artist">${s.artist}</span>
+            </div>
+            <span class="quiz-song-added-by">${s.addedBy}</span>
+          </div>`;
+        }).join('');
+        document.getElementById('finished-songs-list').innerHTML = songsHtml;
+      }
     }
 
     function calculateLocalScores(quiz) {
@@ -623,6 +660,7 @@
     window.copyLink = copyLink;
     window.startQuiz = startQuiz;
     window.revealAnswer = revealAnswer;
+    window.prevSong = prevSong;
     window.nextSong = nextSong;
     window.togglePlayback = togglePlayback;
 

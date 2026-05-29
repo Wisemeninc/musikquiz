@@ -302,7 +302,6 @@ io.on('connection', (socket) => {
   socket.on('join-quiz', ({ quizId, username }, callback) => {
     const quiz = quizzes[quizId];
     if (!quiz) return callback({ error: 'Quiz not found' });
-    if (quiz.state !== 'lobby') return callback({ error: 'Quiz already started' });
     if (!username || username.trim() === '') return callback({ error: 'Username required' });
 
     const trimmed = username.trim();
@@ -311,10 +310,29 @@ io.on('connection', (socket) => {
       ([, c]) => c.username === trimmed
     );
 
+    // If quiz already started, only allow rejoining as existing contestant
+    if (quiz.state !== 'lobby') {
+      if (!existingEntry) {
+        return callback({ error: 'Quiz already started' });
+      }
+      // Rejoin: update socket id for existing contestant
+      const [oldSocketId] = existingEntry;
+      const contestantData = quiz.contestants[oldSocketId];
+      delete quiz.contestants[oldSocketId];
+      quiz.contestants[socket.id] = contestantData;
+      socket.join(`quiz-${quizId}`);
+      socket.quizId = quizId;
+      socket.username = trimmed;
+      saveQuiz(quiz);
+      callback({ quiz: sanitizeQuizForContestant(quiz) });
+      return;
+    }
+
     if (existingEntry) {
       const [oldSocketId] = existingEntry;
+      const songs = quiz.contestants[oldSocketId].songs;
       delete quiz.contestants[oldSocketId];
-      quiz.contestants[socket.id] = { username: trimmed, songs: [] };
+      quiz.contestants[socket.id] = { username: trimmed, songs };
     } else {
       quiz.contestants[socket.id] = { username: trimmed, songs: [] };
     }

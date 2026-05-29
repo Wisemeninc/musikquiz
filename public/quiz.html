@@ -111,6 +111,25 @@
     const savedUsername = sessionStorage.getItem(`quiz-${quizId}-username`);
     if (savedUsername) {
       document.getElementById('username').value = savedUsername;
+      // Auto-rejoin if we have a saved session
+      socket.emit('join-quiz', { quizId, username: savedUsername }, (response) => {
+        if (response.error) {
+          // Can't auto-rejoin, show login form
+          return;
+        }
+        myUsername = savedUsername;
+        const quiz = response.quiz;
+        document.getElementById('login-view').style.display = 'none';
+        document.getElementById('quiz-title').textContent = quiz.name;
+        document.getElementById('max-songs').textContent = quiz.songsPerPerson;
+        document.getElementById('song-max').textContent = quiz.songsPerPerson;
+        updateContestantsList(quiz.contestants);
+        if (quiz.state === 'playing') {
+          showPlayingView(quiz);
+        } else {
+          document.getElementById('lobby-view').style.display = 'block';
+        }
+      });
     }
 
     // Login

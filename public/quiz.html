@@ -303,9 +303,11 @@
         document.getElementById('answer-song-artist').textContent = artist || '';
         document.getElementById('answer-song-info').style.display = 'block';
 
-        // Add to previous songs list
-        revealedSongs.push({ title, artist, addedBy, trackId });
-        renderPreviousSongs();
+        // Add to previous songs list (only once)
+        if (!revealedSongs.some(s => s.trackId === trackId)) {
+          revealedSongs.push({ title, artist, addedBy, trackId });
+          renderPreviousSongs();
+        }
       }
       const votesHtml = Object.entries(votes).map(([voter, data]) => {
         const icon = data.correct ? '&#9989;' : '&#10060;';

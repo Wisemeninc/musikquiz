@@ -446,8 +446,10 @@
         document.getElementById('answer-song-title').innerHTML = `<a href="${spotifyUrl}" target="_blank" rel="noopener">${title}</a>`;
         document.getElementById('answer-song-artist').textContent = artist || '';
         document.getElementById('answer-song-info').style.display = 'block';
-        masterRevealedSongs.push({ title, artist, addedBy, trackId, albumArt });
-        renderMasterPreviousSongs();
+        if (!masterRevealedSongs.some(s => s.trackId === trackId)) {
+          masterRevealedSongs.push({ title, artist, addedBy, trackId, albumArt });
+          renderMasterPreviousSongs();
+        }
       }
       const votesHtml = Object.entries(votes).map(([voter, data]) => {
         const icon = data.correct ? '&#9989;' : '&#10060;';

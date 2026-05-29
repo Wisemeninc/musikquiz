@@ -109,6 +109,11 @@
         <p class="answer-reveal">Added by: <strong id="answer-name"></strong></p>
         <div id="answer-votes"></div>
       </div>
+
+      <div class="card" id="previous-songs-card" style="display:none;">
+        <h2>Previous Songs</h2>
+        <div id="master-previous-songs-list"></div>
+      </div>
     </div>
 
     <!-- Finished State -->
@@ -172,6 +177,7 @@
     let spotifyTokenExpiry = parseInt(localStorage.getItem('spotify_token_expiry') || '0');
     let isPlaying = false;
     let progressInterval = null;
+    let masterRevealedSongs = [];
     let currentPosition = 0;
     let currentDuration = 0;
 
@@ -432,7 +438,7 @@
       showFinishedView(scores);
     });
 
-    socket.on('answer-revealed', ({ addedBy, title, artist, trackId, votes }) => {
+    socket.on('answer-revealed', ({ addedBy, title, artist, trackId, albumArt, votes }) => {
       document.getElementById('answer-card').style.display = 'block';
       document.getElementById('answer-name').textContent = addedBy;
       if (title && trackId) {
@@ -440,6 +446,8 @@
         document.getElementById('answer-song-title').innerHTML = `<a href="${spotifyUrl}" target="_blank" rel="noopener">${title}</a>`;
         document.getElementById('answer-song-artist').textContent = artist || '';
         document.getElementById('answer-song-info').style.display = 'block';
+        masterRevealedSongs.push({ title, artist, addedBy, trackId, albumArt });
+        renderMasterPreviousSongs();
       }
       const votesHtml = Object.entries(votes).map(([voter, data]) => {
         const icon = data.correct ? '&#9989;' : '&#10060;';
@@ -449,6 +457,25 @@
     });
 
     // Functions
+    function renderMasterPreviousSongs() {
+      const card = document.getElementById('previous-songs-card');
+      if (masterRevealedSongs.length === 0) { card.style.display = 'none'; return; }
+      card.style.display = 'block';
+      const html = masterRevealedSongs.slice().reverse().map((s, i) => {
+        const num = masterRevealedSongs.length - i;
+        const spotifyUrl = `https://open.spotify.com/track/${s.trackId}`;
+        return `<div class="quiz-song-row">
+          <img class="quiz-song-cover" src="${s.albumArt || ''}" alt="" />
+          <div class="quiz-song-details">
+            <a href="${spotifyUrl}" target="_blank" rel="noopener" class="quiz-song-title">${num}. ${s.title}</a>
+            <span class="quiz-song-artist">${s.artist}</span>
+          </div>
+          <span class="quiz-song-added-by">${s.addedBy}</span>
+        </div>`;
+      }).join('');
+      document.getElementById('master-previous-songs-list').innerHTML = html;
+    }
+
     function updateContestantsList(contestants) {
       const list = Array.isArray(contestants)
         ? contestants.map(c => typeof c === 'string' ? { username: c, songCount: 0 } : c)
@@ -494,6 +521,14 @@
       document.getElementById('lobby-view').style.display = 'none';
       document.getElementById('playing-view').style.display = 'block';
       document.getElementById('total-contestants').textContent = Object.keys(quiz.contestants).length;
+      // Restore previous songs from queue (all before currentIndex have been played)
+      if (quiz.queue && quiz.currentIndex > 0) {
+        for (let i = 0; i < quiz.currentIndex; i++) {
+          const s = quiz.queue[i];
+          masterRevealedSongs.push({ title: s.title, artist: s.artist, addedBy: s.addedBy, trackId: s.trackId, albumArt: s.albumArt });
+        }
+        renderMasterPreviousSongs();
+      }
       if (quiz.queue && quiz.queue[quiz.currentIndex]) {
         const song = quiz.queue[quiz.currentIndex];
         playSong(

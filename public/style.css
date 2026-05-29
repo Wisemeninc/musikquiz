@@ -671,6 +671,30 @@ input[type="password"]:focus {
   gap: 3px;
 }
 
+.quiz-history-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.btn-small {
+  padding: 4px 12px;
+  font-size: 0.75rem;
+  border-radius: 4px;
+}
+
+.btn-resume {
+  background: #1db954;
+  color: #fff;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.btn-resume:hover {
+  background: #1ed760;
+}
+
 .quiz-history-name {
   font-weight: 500;
   color: #fff;

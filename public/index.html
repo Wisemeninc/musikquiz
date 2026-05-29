@@ -117,16 +117,19 @@
         const stateLabel = q.state === 'lobby' ? 'Lobby' : q.state === 'playing' ? 'Playing' : 'Finished';
         const stateClass = q.state === 'finished' ? 'state-finished' : q.state === 'playing' ? 'state-playing' : 'state-lobby';
         const date = q.createdAt ? new Date(q.createdAt).toLocaleDateString() : '';
-        const clickAction = q.state === 'finished'
-          ? `toggleQuizSongs('${q.id}', this)`
-          : `window.location.href='/master/${q.id}'`;
+        const resumeBtn = q.state !== 'finished'
+          ? `<a href="/master/${q.id}" class="btn btn-small btn-resume" onclick="event.stopPropagation()">Resume</a>`
+          : '';
         return `<div class="quiz-history-entry">
-          <div class="quiz-history-item" onclick="${clickAction}">
+          <div class="quiz-history-item" onclick="toggleQuizSongs('${q.id}', this)">
             <div class="quiz-history-info">
               <span class="quiz-history-name">${q.name}</span>
               <span class="quiz-history-meta">${q.id} &middot; ${q.contestants.length} players &middot; ${q.songCount} songs &middot; ${date}</span>
             </div>
-            <span class="quiz-state ${stateClass}">${stateLabel}</span>
+            <div class="quiz-history-actions">
+              ${resumeBtn}
+              <span class="quiz-state ${stateClass}">${stateLabel}</span>
+            </div>
           </div>
           <div class="quiz-songs-list" id="songs-${q.id}" style="display:none;"></div>
         </div>`;

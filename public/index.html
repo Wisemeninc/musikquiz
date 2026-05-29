@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MusikQuiz</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="container">
+    <h1><a href="/" class="title-link">&#127925; MusikQuiz</a></h1>
+    <p class="subtitle">Create a music quiz or join an existing one</p>
+
+    <div class="card">
+      <h2>Join a Quiz</h2>
+      <p class="hint">Got a quiz link? Just open it directly, or paste the quiz ID below.</p>
+      <form id="join-form">
+        <div class="form-group">
+          <label for="quiz-id">Quiz ID</label>
+          <input type="text" id="quiz-id" placeholder="e.g. a1b2c3d4" required>
+        </div>
+        <button type="submit" class="btn btn-secondary">Go to Quiz</button>
+      </form>
+    </div>
+
+    <!-- Quiz Master Section (password protected) -->
+    <div class="card" id="master-login-card">
+      <h2>Quiz Master</h2>
+      <form id="master-login-form">
+        <div class="form-group">
+          <label for="master-password">Master Password</label>
+          <input type="password" id="master-password" placeholder="Enter password" required>
+        </div>
+        <button type="submit" class="btn btn-primary">Unlock</button>
+        <p id="master-login-error" class="error" style="display:none;"></p>
+      </form>
+    </div>
+
+    <div id="master-panel" style="display:none;">
+      <div class="card">
+        <h2>Create a New Quiz</h2>
+        <form id="create-form">
+          <div class="form-group">
+            <label for="quiz-name">Quiz Name</label>
+            <input type="text" id="quiz-name" placeholder="Friday Night Music Quiz" required>
+          </div>
+          <div class="form-group">
+            <label for="songs-per-person">Songs per Person</label>
+            <input type="number" id="songs-per-person" min="1" max="20" value="3" required>
+          </div>
+          <button type="submit" class="btn btn-primary">Create Quiz</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2>Previous Quizzes</h2>
+        <div id="quiz-history">
+          <p class="hint">Loading...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="footer">
+    <a href="https://github.com/Wisemeninc/musikquiz" target="_blank" rel="noopener">GitHub</a>
+  </footer>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    let masterPassword = sessionStorage.getItem('master_password') || '';
+
+    // Auto-unlock if password is saved in session
+    if (masterPassword) {
+      verifyPassword(masterPassword);
+    }
+
+    // Master login
+    document.getElementById('master-login-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const password = document.getElementById('master-password').value;
+      verifyPassword(password);
+    });
+
+    async function verifyPassword(password) {
+      const res = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password })
+      });
+      if (res.ok) {
+        masterPassword = password;
+        sessionStorage.setItem('master_password', password);
+        document.getElementById('master-login-card').style.display = 'none';
+        document.getElementById('master-panel').style.display = 'block';
+        loadQuizHistory();
+      } else {
+        document.getElementById('master-login-error').textContent = 'Wrong password';
+        document.getElementById('master-login-error').style.display = 'block';
+        sessionStorage.removeItem('master_password');
+      }
+    }
+
+    async function loadQuizHistory() {
+      const res = await fetch('/api/quizzes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: masterPassword })
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.quizzes.length === 0) {
+        document.getElementById('quiz-history').innerHTML = '<p class="hint">No quizzes yet</p>';
+        return;
+      }
+      const html = data.quizzes.map(q => {
+        const stateLabel = q.state === 'lobby' ? 'Lobby' : q.state === 'playing' ? 'Playing' : 'Finished';
+        const stateClass = q.state === 'finished' ? 'state-finished' : q.state === 'playing' ? 'state-playing' : 'state-lobby';
+        const date = q.createdAt ? new Date(q.createdAt).toLocaleDateString() : '';
+        return `<a href="/master/${q.id}" class="quiz-history-item">
+          <div class="quiz-history-info">
+            <span class="quiz-history-name">${q.name}</span>
+            <span class="quiz-history-meta">${q.contestants.length} players &middot; ${q.songCount} songs &middot; ${date}</span>
+          </div>
+          <span class="quiz-state ${stateClass}">${stateLabel}</span>
+        </a>`;
+      }).join('');
+      document.getElementById('quiz-history').innerHTML = html;
+    }
+
+    // Create quiz
+    document.getElementById('create-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const quizName = document.getElementById('quiz-name').value;
+      const songsPerPerson = parseInt(document.getElementById('songs-per-person').value);
+
+      socket.emit('create-quiz', { quizName, songsPerPerson }, (response) => {
+        if (response.quizId) {
+          window.location.href = `/master/${response.quizId}`;
+        }
+      });
+    });
+
+    // Join quiz
+    document.getElementById('join-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const quizId = document.getElementById('quiz-id').value.trim();
+      if (quizId) {
+        window.location.href = `/quiz/${quizId}`;
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+{
+  "name": "musikquiz",
+  "version": "1.0.0",
+  "description": "A music quiz web app where contestants add Spotify music and others guess who picked each song",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.7.2",
+    "uuid": "^9.0.0"
+  }
+}

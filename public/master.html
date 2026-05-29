@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MusikQuiz - Quiz Master</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="container">
+    <h1><a href="/" class="title-link">&#127925; Quiz Master Panel</a></h1>
+
+    <!-- Password Gate -->
+    <div id="password-gate" class="card">
+      <h2>Quiz Master Access</h2>
+      <form id="gate-form">
+        <div class="form-group">
+          <label for="gate-password">Master Password</label>
+          <input type="password" id="gate-password" placeholder="Enter password" required autofocus>
+        </div>
+        <button type="submit" class="btn btn-primary">Unlock</button>
+        <p id="gate-error" class="error" style="display:none;">Wrong password</p>
+      </form>
+    </div>
+
+    <!-- Main content (hidden until auth) -->
+    <div id="master-content" style="display:none;">
+
+    <!-- Spotify Auth Banner -->
+    <div id="spotify-auth-banner" class="card spotify-banner">
+      <div class="spotify-status">
+        <span id="spotify-status-text">Connect Spotify Premium for full track playback</span>
+        <button id="spotify-login-btn" class="btn btn-spotify" onclick="loginSpotify()">Connect Spotify</button>
+      </div>
+    </div>
+
+    <!-- Lobby State -->
+    <div id="lobby-view">
+      <div class="card">
+        <h2 id="quiz-title">Loading...</h2>
+        <div class="share-link">
+          <label>Share this link with contestants:</label>
+          <div class="link-box">
+            <input type="text" id="share-link" readonly>
+            <button class="btn btn-small" onclick="copyLink()">Copy</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Contestants</h2>
+        <div id="contestants-list" class="contestants-list">
+          <p class="hint">Waiting for contestants to join...</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <button id="start-btn" class="btn btn-primary btn-large" onclick="startQuiz()">
+          Start Quiz
+        </button>
+        <p class="hint" id="start-hint">Contestants need to add their songs first</p>
+      </div>
+    </div>
+
+    <!-- Playing State -->
+    <div id="playing-view" style="display:none;">
+      <div class="card">
+        <h2>Now Playing</h2>
+        <p class="song-counter">Song <span id="song-number">1</span> of <span id="total-songs">0</span></p>
+        <div id="player-container">
+          <div id="sdk-player" class="sdk-player" style="display:none;">
+            <div class="sdk-track-info">
+              <img id="sdk-album-art" class="sdk-album-art" src="" alt="">
+              <div class="sdk-track-details">
+                <div id="sdk-track-name" class="sdk-track-name"></div>
+                <div id="sdk-track-artist" class="sdk-track-artist"></div>
+              </div>
+            </div>
+            <div class="sdk-controls">
+              <button class="btn btn-secondary" id="sdk-play-btn" onclick="togglePlayback()">&#9654; Play</button>
+            </div>
+            <div class="sdk-progress">
+              <span id="sdk-position">0:00</span>
+              <div class="sdk-progress-bar">
+                <div id="sdk-progress-fill" class="sdk-progress-fill"></div>
+              </div>
+              <span id="sdk-duration">0:00</span>
+            </div>
+          </div>
+          <div id="iframe-player" style="display:none;"></div>
+        </div>
+        <div class="playback-controls">
+          <button class="btn btn-primary" onclick="revealAnswer()">Reveal Answer</button>
+          <button class="btn btn-primary" onclick="nextSong()">Next Song &#9654;</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Votes</h2>
+        <p id="vote-status">Waiting for votes... <span id="vote-count">0</span>/<span id="total-contestants">0</span></p>
+      </div>
+
+      <div class="card" id="answer-card" style="display:none;">
+        <h2>Answer</h2>
+        <div id="answer-song-info" class="answer-song-info" style="display:none;">
+          <p class="answer-song-title"><strong id="answer-song-title"></strong></p>
+          <p class="answer-song-artist" id="answer-song-artist"></p>
+        </div>
+        <p class="answer-reveal">Added by: <strong id="answer-name"></strong></p>
+        <div id="answer-votes"></div>
+      </div>
+    </div>
+
+    <!-- Finished State -->
+    <div id="finished-view" style="display:none;">
+      <div class="card">
+        <h2>&#127942; Final Scoreboard</h2>
+        <div id="scoreboard"></div>
+      </div>
+    </div>
+
+    </div><!-- end master-content -->
+  </div>
+
+  <footer class="footer">
+    <a href="https://github.com/Wisemeninc/musikquiz" target="_blank" rel="noopener">GitHub</a>
+  </footer>
+
+  <script src="https://sdk.scdn.co/spotify-player.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const quizId = window.location.pathname.split('/').pop();
+
+    // ─── Password Gate ────────────────────────────────────────────────────────
+    let masterPassword = sessionStorage.getItem('master_password') || '';
+
+    if (masterPassword) {
+      verifyAndUnlock(masterPassword);
+    }
+
+    document.getElementById('gate-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      verifyAndUnlock(document.getElementById('gate-password').value);
+    });
+
+    async function verifyAndUnlock(password) {
+      const res = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password })
+      });
+      if (res.ok) {
+        masterPassword = password;
+        sessionStorage.setItem('master_password', password);
+        document.getElementById('password-gate').style.display = 'none';
+        document.getElementById('master-content').style.display = 'block';
+        initMaster();
+      } else {
+        document.getElementById('gate-error').style.display = 'block';
+        sessionStorage.removeItem('master_password');
+      }
+    }
+
+    function initMaster() {
+
+    // ─── Spotify Web Playback SDK ─────────────────────────────────────────────
+    let spotifyPlayer = null;
+    let spotifyDeviceId = null;
+    let spotifyAccessToken = localStorage.getItem('spotify_access_token');
+    let spotifyRefreshToken = localStorage.getItem('spotify_refresh_token');
+    let spotifyTokenExpiry = parseInt(localStorage.getItem('spotify_token_expiry') || '0');
+    let isPlaying = false;
+    let progressInterval = null;
+    let currentPosition = 0;
+    let currentDuration = 0;
+
+    // Check if we have a valid token
+    if (spotifyAccessToken && Date.now() < spotifyTokenExpiry) {
+      initSpotifyPlayer();
+      updateAuthUI(true);
+    } else if (spotifyRefreshToken) {
+      refreshSpotifyToken().then(() => {
+        initSpotifyPlayer();
+        updateAuthUI(true);
+      }).catch(() => updateAuthUI(false));
+    } else {
+      updateAuthUI(false);
+    }
+
+    function updateAuthUI(connected) {
+      const banner = document.getElementById('spotify-auth-banner');
+      const statusText = document.getElementById('spotify-status-text');
+      const loginBtn = document.getElementById('spotify-login-btn');
+      if (connected) {
+        banner.classList.add('connected');
+        statusText.textContent = 'Spotify connected - full playback enabled';
+        loginBtn.textContent = 'Reconnect';
+      } else {
+        banner.classList.remove('connected');
+        statusText.textContent = 'Connect Spotify Premium for full track playback';
+        loginBtn.textContent = 'Connect Spotify';
+      }
+    }
+
+    function loginSpotify() {
+      const w = 450, h = 600;
+      const left = (screen.width - w) / 2;
+      const top = (screen.height - h) / 2;
+      window.open('/auth/spotify', 'spotify-auth', `width=${w},height=${h},left=${left},top=${top}`);
+    }
+
+    window.addEventListener('message', (event) => {
+      if (event.data.type === 'spotify-auth-success') {
+        spotifyAccessToken = event.data.access_token;
+        spotifyRefreshToken = event.data.refresh_token;
+        spotifyTokenExpiry = Date.now() + event.data.expires_in * 1000;
+        localStorage.setItem('spotify_access_token', spotifyAccessToken);
+        localStorage.setItem('spotify_refresh_token', spotifyRefreshToken);
+        localStorage.setItem('spotify_token_expiry', spotifyTokenExpiry.toString());
+        initSpotifyPlayer();
+        updateAuthUI(true);
+      } else if (event.data.type === 'spotify-auth-error') {
+        alert('Spotify login failed: ' + event.data.error);
+      }
+    });
+
+    async function refreshSpotifyToken() {
+      const res = await fetch('/auth/spotify/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: spotifyRefreshToken })
+      });
+      if (!res.ok) throw new Error('Refresh failed');
+      const data = await res.json();
+      spotifyAccessToken = data.access_token;
+      spotifyRefreshToken = data.refresh_token;
+      spotifyTokenExpiry = Date.now() + data.expires_in * 1000;
+      localStorage.setItem('spotify_access_token', spotifyAccessToken);
+      localStorage.setItem('spotify_refresh_token', spotifyRefreshToken);
+      localStorage.setItem('spotify_token_expiry', spotifyTokenExpiry.toString());
+    }
+
+    async function getValidToken() {
+      if (Date.now() >= spotifyTokenExpiry - 60000) {
+        await refreshSpotifyToken();
+      }
+      return spotifyAccessToken;
+    }
+
+    window.onSpotifyWebPlaybackSDKReady = () => {
+      if (spotifyAccessToken && Date.now() < spotifyTokenExpiry) {
+        initSpotifyPlayer();
+      }
+    };
+
+    function initSpotifyPlayer() {
+      if (spotifyPlayer) {
+        spotifyPlayer.disconnect();
+      }
+
+      spotifyPlayer = new Spotify.Player({
+        name: 'MusikQuiz',
+        getOAuthToken: async (cb) => {
+          const token = await getValidToken();
+          cb(token);
+        },
+        volume: 0.8
+      });
+
+      spotifyPlayer.addListener('ready', ({ device_id }) => {
+        console.log('Spotify SDK ready, device:', device_id);
+        spotifyDeviceId = device_id;
+      });
+
+      spotifyPlayer.addListener('not_ready', ({ device_id }) => {
+        console.log('Spotify device offline:', device_id);
+        spotifyDeviceId = null;
+      });
+
+      spotifyPlayer.addListener('player_state_changed', (state) => {
+        if (!state) return;
+        isPlaying = !state.paused;
+        currentPosition = state.position;
+        currentDuration = state.duration;
+        updatePlayButton();
+        updateProgress();
+      });
+
+      spotifyPlayer.addListener('initialization_error', ({ message }) => {
+        console.error('Spotify init error:', message);
+      });
+
+      spotifyPlayer.addListener('authentication_error', ({ message }) => {
+        console.error('Spotify auth error:', message);
+        updateAuthUI(false);
+      });
+
+      spotifyPlayer.connect();
+    }
+
+    async function playTrack(trackId) {
+      if (!spotifyDeviceId || !spotifyAccessToken) {
+        // Fallback to iframe
+        loadIframePlayer(trackId);
+        return;
+      }
+
+      const token = await getValidToken();
+      const res = await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${spotifyDeviceId}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ uris: [`spotify:track:${trackId}`] })
+      });
+
+      if (!res.ok && res.status !== 204) {
+        console.error('Failed to play track, falling back to iframe');
+        loadIframePlayer(trackId);
+        return;
+      }
+
+      document.getElementById('sdk-player').style.display = 'block';
+      document.getElementById('iframe-player').style.display = 'none';
+      isPlaying = true;
+      updatePlayButton();
+      startProgressTimer();
+    }
+
+    function togglePlayback() {
+      if (!spotifyPlayer) return;
+      spotifyPlayer.togglePlay();
+    }
+
+    function updatePlayButton() {
+      const btn = document.getElementById('sdk-play-btn');
+      btn.innerHTML = isPlaying ? '&#10074;&#10074; Pause' : '&#9654; Play';
+    }
+
+    function startProgressTimer() {
+      if (progressInterval) clearInterval(progressInterval);
+      progressInterval = setInterval(async () => {
+        if (!spotifyPlayer || !isPlaying) return;
+        const state = await spotifyPlayer.getCurrentState();
+        if (state) {
+          currentPosition = state.position;
+          currentDuration = state.duration;
+          updateProgress();
+        }
+      }, 1000);
+    }
+
+    function updateProgress() {
+      document.getElementById('sdk-position').textContent = formatMs(currentPosition);
+      document.getElementById('sdk-duration').textContent = formatMs(currentDuration);
+      const pct = currentDuration > 0 ? (currentPosition / currentDuration * 100) : 0;
+      document.getElementById('sdk-progress-fill').style.width = pct + '%';
+    }
+
+    function formatMs(ms) {
+      const mins = Math.floor(ms / 60000);
+      const secs = Math.floor((ms % 60000) / 1000);
+      return `${mins}:${secs.toString().padStart(2, '0')}`;
+    }
+
+    function loadIframePlayer(trackId) {
+      document.getElementById('sdk-player').style.display = 'none';
+      const container = document.getElementById('iframe-player');
+      container.style.display = 'block';
+      container.innerHTML = `<iframe
+        src="https://open.spotify.com/embed/track/${trackId}?utm_source=generator&theme=0"
+        width="100%"
+        height="352"
+        frameBorder="0"
+        style="border-radius:12px"
+        allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
+        loading="lazy"
+      ></iframe>`;
+    }
+
+    // ─── Quiz Logic ───────────────────────────────────────────────────────────
+
+    // Rejoin as master
+    socket.emit('rejoin-master', { quizId }, (response) => {
+      if (response.error) {
+        alert('Error: ' + response.error);
+        window.location.href = '/';
+        return;
+      }
+      const quiz = response.quiz;
+      document.getElementById('quiz-title').textContent = quiz.name;
+      const baseUrl = window.location.origin;
+      document.getElementById('share-link').value = `${baseUrl}/quiz/${quiz.id}`;
+      updateContestantsList(quiz.contestants);
+
+      if (quiz.state === 'playing') {
+        showPlayingView(quiz);
+      } else if (quiz.state === 'finished') {
+        const scores = calculateLocalScores(quiz);
+        showFinishedView(scores);
+      }
+    });
+
+    // Events
+    socket.on('contestant-joined', ({ username, contestants }) => {
+      updateContestantsList(contestants.map(u => ({ username: u, songCount: 0 })));
+    });
+
+    socket.on('songs-updated', ({ contestants }) => {
+      updateContestantsList(contestants);
+    });
+
+    socket.on('quiz-started', ({ totalSongs, currentIndex, currentSong, contestants }) => {
+      document.getElementById('total-contestants').textContent = contestants.length;
+      showPlayingViewFromEvent(totalSongs, currentIndex, currentSong);
+    });
+
+    socket.on('next-song', ({ currentIndex, currentSong, totalSongs }) => {
+      document.getElementById('answer-card').style.display = 'none';
+      document.getElementById('vote-count').textContent = '0';
+      playSong(currentSong, currentIndex, totalSongs);
+    });
+
+    socket.on('vote-update', ({ voteCount, totalContestants }) => {
+      document.getElementById('vote-count').textContent = voteCount;
+      document.getElementById('total-contestants').textContent = totalContestants;
+    });
+
+    socket.on('quiz-finished', ({ scores }) => {
+      showFinishedView(scores);
+    });
+
+    socket.on('answer-revealed', ({ addedBy, title, artist, trackId, votes }) => {
+      document.getElementById('answer-card').style.display = 'block';
+      document.getElementById('answer-name').textContent = addedBy;
+      if (title && trackId) {
+        const spotifyUrl = `https://open.spotify.com/track/${trackId}`;
+        document.getElementById('answer-song-title').innerHTML = `<a href="${spotifyUrl}" target="_blank" rel="noopener">${title}</a>`;
+        document.getElementById('answer-song-artist').textContent = artist || '';
+        document.getElementById('answer-song-info').style.display = 'block';
+      }
+      const votesHtml = Object.entries(votes).map(([voter, data]) => {
+        const icon = data.correct ? '&#9989;' : '&#10060;';
+        return `<div class="vote-result">${icon} <strong>${voter}</strong> voted for "${data.votedFor}"</div>`;
+      }).join('');
+      document.getElementById('answer-votes').innerHTML = votesHtml;
+    });
+
+    // Functions
+    function updateContestantsList(contestants) {
+      const list = Array.isArray(contestants)
+        ? contestants.map(c => typeof c === 'string' ? { username: c, songCount: 0 } : c)
+        : Object.values(contestants);
+
+      if (list.length === 0) {
+        document.getElementById('contestants-list').innerHTML = '<p class="hint">Waiting for contestants to join...</p>';
+        return;
+      }
+
+      const html = list.map(c =>
+        `<div class="contestant-item">
+          <span class="contestant-name">${c.username}</span>
+          <span class="song-badge">${c.songCount} songs</span>
+        </div>`
+      ).join('');
+      document.getElementById('contestants-list').innerHTML = html;
+    }
+
+    function copyLink() {
+      const input = document.getElementById('share-link');
+      input.select();
+      input.setSelectionRange(0, 99999);
+
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(input.value).catch(() => {
+          document.execCommand('copy');
+        });
+      } else {
+        document.execCommand('copy');
+      }
+    }
+
+    function startQuiz() {
+      socket.emit('start-quiz', { quizId }, (response) => {
+        if (response.error) {
+          alert(response.error);
+        }
+      });
+    }
+
+    function showPlayingView(quiz) {
+      document.getElementById('lobby-view').style.display = 'none';
+      document.getElementById('playing-view').style.display = 'block';
+      document.getElementById('total-contestants').textContent = Object.keys(quiz.contestants).length;
+      if (quiz.queue && quiz.queue[quiz.currentIndex]) {
+        const song = quiz.queue[quiz.currentIndex];
+        playSong(
+          { trackId: song.trackId, title: song.title, artist: song.artist, albumArt: song.albumArt },
+          quiz.currentIndex,
+          quiz.queue.length
+        );
+      }
+    }
+
+    function showPlayingViewFromEvent(totalSongs, currentIndex, currentSong) {
+      document.getElementById('lobby-view').style.display = 'none';
+      document.getElementById('playing-view').style.display = 'block';
+      playSong(currentSong, currentIndex, totalSongs);
+    }
+
+    function playSong(song, index, total) {
+      document.getElementById('song-number').textContent = index + 1;
+      document.getElementById('total-songs').textContent = total;
+
+      // Update SDK player track info
+      document.getElementById('sdk-track-name').textContent = song.title || '';
+      document.getElementById('sdk-track-artist').textContent = song.artist || '';
+      if (song.albumArt) {
+        document.getElementById('sdk-album-art').src = song.albumArt;
+        document.getElementById('sdk-album-art').style.display = 'block';
+      }
+
+      // Play via SDK or fallback to iframe
+      if (spotifyDeviceId && spotifyAccessToken) {
+        playTrack(song.trackId);
+      } else {
+        loadIframePlayer(song.trackId);
+      }
+    }
+
+    function revealAnswer() {
+      socket.emit('reveal-answer', { quizId }, (response) => {
+        if (response.error) alert(response.error);
+      });
+    }
+
+    function nextSong() {
+      socket.emit('next-song', { quizId }, (response) => {
+        if (response.error) alert(response.error);
+      });
+    }
+
+    function showFinishedView(scores) {
+      document.getElementById('lobby-view').style.display = 'none';
+      document.getElementById('playing-view').style.display = 'none';
+      document.getElementById('finished-view').style.display = 'block';
+
+      // Stop playback
+      if (spotifyPlayer) spotifyPlayer.pause();
+      if (progressInterval) clearInterval(progressInterval);
+
+      const html = scores.map((s, i) => {
+        const medal = i === 0 ? '&#129351;' : i === 1 ? '&#129352;' : i === 2 ? '&#129353;' : '';
+        return `<div class="score-row ${i === 0 ? 'winner' : ''}">
+          <span class="rank">${medal} #${i + 1}</span>
+          <span class="score-name">${s.username}</span>
+          <span class="score-value">${s.score} correct</span>
+        </div>`;
+      }).join('');
+      document.getElementById('scoreboard').innerHTML = html;
+    }
+
+    function calculateLocalScores(quiz) {
+      const scores = {};
+      for (const c of Object.values(quiz.contestants)) {
+        scores[c.username] = 0;
+      }
+      for (const [idx, songVotes] of Object.entries(quiz.votes || {})) {
+        const song = quiz.queue[parseInt(idx)];
+        if (!song) continue;
+        for (const [voter, votedFor] of Object.entries(songVotes)) {
+          if (votedFor === song.addedBy) {
+            scores[voter] = (scores[voter] || 0) + 1;
+          }
+        }
+      }
+      return Object.entries(scores)
+        .map(([username, score]) => ({ username, score }))
+        .sort((a, b) => b.score - a.score);
+    }
+
+    } // end initMaster
+  </script>
+</body>
+</html>

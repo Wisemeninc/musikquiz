@@ -1,0 +1,27 @@
+services:
+  musikquiz:
+    build: .
+    volumes:
+      - quiz-data:/app/data
+    environment:
+      - PORT=3000
+      - DATA_DIR=/app/data
+      - MASTER_PASSWORD=${MASTER_PASSWORD}
+      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID}
+      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.musikquiz.rule=Host(`quiz.shitshow.it`)"
+      - "traefik.http.routers.musikquiz.entrypoints=websecure"
+      - "traefik.http.routers.musikquiz.tls.certresolver=letsencrypt"
+      - "traefik.http.services.musikquiz.loadbalancer.server.port=3000"
+    restart: unless-stopped
+    networks:
+      - traefik-public
+
+networks:
+  traefik-public:
+    external: true
+
+volumes:
+  quiz-data:

@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MusikQuiz - Join</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="container">
+    <h1><a href="/" class="title-link">&#127925; MusikQuiz</a></h1>
+
+    <!-- Login View -->
+    <div id="login-view">
+      <div class="card">
+        <h2>Join the Quiz</h2>
+        <form id="login-form">
+          <div class="form-group">
+            <label for="username">Your Name</label>
+            <input type="text" id="username" placeholder="Enter your name" required autofocus>
+          </div>
+          <button type="submit" class="btn btn-primary">Join</button>
+        </form>
+        <p id="login-error" class="error" style="display:none;"></p>
+      </div>
+    </div>
+
+    <!-- Lobby View -->
+    <div id="lobby-view" style="display:none;">
+      <div class="card">
+        <h2 id="quiz-title"></h2>
+        <p class="hint">Add up to <strong id="max-songs"></strong> songs to the quiz</p>
+      </div>
+
+      <div class="card">
+        <h2>Search Music</h2>
+        <div class="search-box">
+          <input type="text" id="search-input" placeholder="Search for a song or artist...">
+          <button class="btn btn-secondary" onclick="searchMusic()">Search</button>
+        </div>
+        <div id="search-results"></div>
+      </div>
+
+      <div class="card">
+        <h2>Your Songs (<span id="song-count">0</span>/<span id="song-max">3</span>)</h2>
+        <div id="my-songs"><p class="hint">No songs added yet</p></div>
+      </div>
+
+      <div class="card">
+        <h2>Contestants</h2>
+        <div id="contestants-list"></div>
+      </div>
+
+      <p class="hint center">Waiting for the quiz master to start the quiz...</p>
+    </div>
+
+    <!-- Playing View -->
+    <div id="playing-view" style="display:none;">
+      <div class="card">
+        <h2>Now Playing</h2>
+        <p class="song-counter">Song <span id="song-number">1</span> of <span id="total-songs">0</span></p>
+        <p class="hint">Listen to the song playing in the room...</p>
+      </div>
+
+      <div class="card">
+        <h2>Who picked this song?</h2>
+        <div id="vote-buttons"></div>
+        <p id="vote-status" class="hint"></p>
+      </div>
+
+      <div class="card" id="answer-card" style="display:none;">
+        <h2>Answer</h2>
+        <div id="answer-song-info" class="answer-song-info" style="display:none;">
+          <p class="answer-song-title"><strong id="answer-song-title"></strong></p>
+          <p class="answer-song-artist" id="answer-song-artist"></p>
+        </div>
+        <p class="answer-reveal">Added by: <strong id="answer-name"></strong></p>
+        <div id="answer-votes"></div>
+      </div>
+
+      <div class="card" id="previous-songs-card" style="display:none;">
+        <h2>Previous Songs</h2>
+        <div id="previous-songs-list"></div>
+      </div>
+    </div>
+
+    <!-- Finished View -->
+    <div id="finished-view" style="display:none;">
+      <div class="card">
+        <h2>&#127942; Final Scoreboard</h2>
+        <div id="scoreboard"></div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="footer">
+    <a href="https://github.com/Wisemeninc/musikquiz" target="_blank" rel="noopener">GitHub</a>
+  </footer>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const quizId = window.location.pathname.split('/').pop();
+    let myUsername = '';
+    let contestants = [];
+    let mySongs = [];
+    let hasVoted = false;
+    let revealedSongs = [];
+
+    // Restore session
+    const savedUsername = sessionStorage.getItem(`quiz-${quizId}-username`);
+    if (savedUsername) {
+      document.getElementById('username').value = savedUsername;
+    }
+
+    // Login
+    document.getElementById('login-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const username = document.getElementById('username').value.trim();
+      if (!username) return;
+
+      socket.emit('join-quiz', { quizId, username }, (response) => {
+        if (response.error) {
+          document.getElementById('login-error').textContent = response.error;
+          document.getElementById('login-error').style.display = 'block';
+          return;
+        }
+
+        myUsername = username;
+        sessionStorage.setItem(`quiz-${quizId}-username`, username);
+        const quiz = response.quiz;
+
+        document.getElementById('login-view').style.display = 'none';
+        document.getElementById('quiz-title').textContent = quiz.name;
+        document.getElementById('max-songs').textContent = quiz.songsPerPerson;
+        document.getElementById('song-max').textContent = quiz.songsPerPerson;
+
+        updateContestantsList(quiz.contestants);
+
+        if (quiz.state === 'playing') {
+          showPlayingView(quiz);
+        } else {
+          document.getElementById('lobby-view').style.display = 'block';
+        }
+      });
+    });
+
+    // Search
+    document.getElementById('search-input').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        searchMusic();
+      }
+    });
+
+    function searchMusic() {
+      const query = document.getElementById('search-input').value.trim();
+      if (!query) return;
+
+      document.getElementById('search-results').innerHTML = '<p class="hint">Searching...</p>';
+
+      socket.emit('search-spotify', { query }, (response) => {
+        if (response.error) {
+          document.getElementById('search-results').innerHTML = `<p class="error">${response.error}</p>`;
+          return;
+        }
+
+        if (response.tracks.length === 0) {
+          document.getElementById('search-results').innerHTML = '<p class="hint">No results found</p>';
+          return;
+        }
+
+        const html = response.tracks.map(t => `
+          <div class="search-result">
+            <img src="${t.albumArt}" alt="" class="result-thumb">
+            <div class="result-info">
+              <div class="result-title">${t.title}</div>
+              <div class="result-artist">${t.artist}</div>
+              <div class="result-duration">${t.duration}</div>
+            </div>
+            <button class="btn btn-small btn-add" onclick='addSong(${JSON.stringify(t).replace(/'/g, "&#39;")})'>Add</button>
+          </div>
+        `).join('');
+        document.getElementById('search-results').innerHTML = html;
+      });
+    }
+
+    function addSong(track) {
+      socket.emit('add-song', { quizId, song: track }, (response) => {
+        if (response.error) {
+          alert(response.error);
+          return;
+        }
+        mySongs = response.songs;
+        updateMySongs();
+      });
+    }
+
+    function removeSong(index) {
+      socket.emit('remove-song', { quizId, index }, (response) => {
+        if (response.error) {
+          alert(response.error);
+          return;
+        }
+        mySongs = response.songs;
+        updateMySongs();
+      });
+    }
+
+    function updateMySongs() {
+      document.getElementById('song-count').textContent = mySongs.length;
+      if (mySongs.length === 0) {
+        document.getElementById('my-songs').innerHTML = '<p class="hint">No songs added yet</p>';
+        return;
+      }
+      const html = mySongs.map((s, i) => `
+        <div class="song-item">
+          <img src="${s.albumArt}" alt="" class="song-thumb">
+          <div class="song-info">
+            <span class="song-title">${s.title}</span>
+            <span class="song-artist">${s.artist}</span>
+          </div>
+          <button class="btn btn-small btn-danger" onclick="removeSong(${i})">Remove</button>
+        </div>
+      `).join('');
+      document.getElementById('my-songs').innerHTML = html;
+    }
+
+    function updateContestantsList(list) {
+      contestants = list.map(c => typeof c === 'string' ? c : c.username);
+      const html = list.map(c => {
+        const name = typeof c === 'string' ? c : c.username;
+        const count = typeof c === 'object' ? c.songCount : 0;
+        return `<div class="contestant-item">
+          <span class="contestant-name">${name}</span>
+          <span class="song-badge">${count} songs</span>
+        </div>`;
+      }).join('');
+      document.getElementById('contestants-list').innerHTML = html;
+    }
+
+    // Socket events
+    socket.on('contestant-joined', ({ username, contestants: contestantList }) => {
+      contestants = contestantList;
+      updateContestantsList(contestantList.map(u => ({ username: u, songCount: 0 })));
+    });
+
+    socket.on('songs-updated', ({ contestants: contestantList }) => {
+      updateContestantsList(contestantList);
+    });
+
+    socket.on('quiz-started', ({ totalSongs, currentIndex, currentSong, contestants: contestantNames }) => {
+      contestants = contestantNames;
+      showPlayingViewFromEvent(totalSongs, currentIndex, currentSong);
+    });
+
+    socket.on('next-song', ({ currentIndex, currentSong, totalSongs }) => {
+      hasVoted = false;
+      document.getElementById('answer-card').style.display = 'none';
+      document.getElementById('answer-song-info').style.display = 'none';
+      document.getElementById('vote-status').textContent = '';
+      playSong(currentSong, currentIndex, totalSongs);
+      renderVoteButtons();
+    });
+
+    socket.on('answer-revealed', ({ addedBy, title, artist, trackId, votes }) => {
+      document.getElementById('answer-card').style.display = 'block';
+      document.getElementById('answer-name').textContent = addedBy;
+      if (title) {
+        const spotifyUrl = `https://open.spotify.com/track/${trackId}`;
+        document.getElementById('answer-song-title').innerHTML = `<a href="${spotifyUrl}" target="_blank" rel="noopener">${title}</a>`;
+        document.getElementById('answer-song-artist').textContent = artist || '';
+        document.getElementById('answer-song-info').style.display = 'block';
+
+        // Add to previous songs list
+        revealedSongs.push({ title, artist, addedBy, trackId });
+        renderPreviousSongs();
+      }
+      const votesHtml = Object.entries(votes).map(([voter, data]) => {
+        const icon = data.correct ? '&#9989;' : '&#10060;';
+        return `<div class="vote-result">${icon} <strong>${voter}</strong> voted for "${data.votedFor}"</div>`;
+      }).join('');
+      document.getElementById('answer-votes').innerHTML = votesHtml;
+    });
+
+    socket.on('quiz-finished', ({ scores }) => {
+      showFinishedView(scores);
+    });
+
+    // Playing view
+    function showPlayingView(quiz) {
+      document.getElementById('lobby-view').style.display = 'none';
+      document.getElementById('playing-view').style.display = 'block';
+      contestants = quiz.contestants.map(c => c.username);
+      if (quiz.currentSong) {
+        playSong(quiz.currentSong, quiz.currentIndex, quiz.totalSongs);
+      }
+      renderVoteButtons();
+    }
+
+    function showPlayingViewFromEvent(totalSongs, currentIndex, currentSong) {
+      document.getElementById('lobby-view').style.display = 'none';
+      document.getElementById('playing-view').style.display = 'block';
+      playSong(currentSong, currentIndex, totalSongs);
+      renderVoteButtons();
+    }
+
+    function playSong(song, index, total) {
+      document.getElementById('song-number').textContent = index + 1;
+      document.getElementById('total-songs').textContent = total;
+    }
+
+    function renderVoteButtons() {
+      const html = contestants
+        .filter(name => name !== myUsername)
+        .map(name => `<button class="btn btn-vote" onclick="vote('${name}')" ${hasVoted ? 'disabled' : ''}>${name}</button>`)
+        .join('');
+      document.getElementById('vote-buttons').innerHTML = html;
+    }
+
+    function vote(votedFor) {
+      if (hasVoted) return;
+      hasVoted = true;
+      socket.emit('vote', { quizId, votedFor }, (response) => {
+        if (response.error) {
+          hasVoted = false;
+          alert(response.error);
+          return;
+        }
+        document.getElementById('vote-status').textContent = `You voted for ${votedFor}`;
+        document.querySelectorAll('.btn-vote').forEach(btn => btn.disabled = true);
+      });
+    }
+
+    function showFinishedView(scores) {
+      document.getElementById('lobby-view').style.display = 'none';
+      document.getElementById('playing-view').style.display = 'none';
+      document.getElementById('finished-view').style.display = 'block';
+
+      const html = scores.map((s, i) => {
+        const medal = i === 0 ? '&#129351;' : i === 1 ? '&#129352;' : i === 2 ? '&#129353;' : '';
+        const isMe = s.username === myUsername ? ' highlight' : '';
+        return `<div class="score-row${isMe} ${i === 0 ? 'winner' : ''}">
+          <span class="rank">${medal} #${i + 1}</span>
+          <span class="score-name">${s.username}</span>
+          <span class="score-value">${s.score} correct</span>
+        </div>`;
+      }).join('');
+      document.getElementById('scoreboard').innerHTML = html;
+    }
+
+    function renderPreviousSongs() {
+      if (revealedSongs.length === 0) return;
+      document.getElementById('previous-songs-card').style.display = 'block';
+      const html = revealedSongs.slice().reverse().map((s, i) => {
+        const num = revealedSongs.length - i;
+        const spotifyUrl = `https://open.spotify.com/track/${s.trackId}`;
+        return `<div class="previous-song-item">
+          <span class="previous-song-num">#${num}</span>
+          <div class="previous-song-info">
+            <a href="${spotifyUrl}" target="_blank" rel="noopener" class="previous-song-title">${s.title}</a>
+            <span class="previous-song-artist">${s.artist} &middot; ${s.addedBy}</span>
+          </div>
+        </div>`;
+      }).join('');
+      document.getElementById('previous-songs-list').innerHTML = html;
+    }
+  </script>
+</body>
+</html>

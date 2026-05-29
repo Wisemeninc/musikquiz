@@ -572,6 +572,13 @@ io.on('connection', (socket) => {
     const currentSong = quiz.queue[quiz.currentIndex];
     if (!currentSong) return callback({ error: 'No current song' });
 
+    // Track revealed indices
+    if (!quiz.revealedIndices) quiz.revealedIndices = [];
+    if (!quiz.revealedIndices.includes(quiz.currentIndex)) {
+      quiz.revealedIndices.push(quiz.currentIndex);
+      saveQuiz(quiz);
+    }
+
     const songVotes = quiz.votes[quiz.currentIndex] || {};
     const results = {};
     for (const [voter, votedFor] of Object.entries(songVotes)) {

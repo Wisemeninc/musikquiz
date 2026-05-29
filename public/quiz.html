@@ -280,13 +280,17 @@
       showPlayingViewFromEvent(totalSongs, currentIndex, currentSong);
     });
 
-    socket.on('next-song', ({ currentIndex, currentSong, totalSongs }) => {
+    socket.on('next-song', ({ currentIndex, currentSong, totalSongs, previousSong }) => {
       hasVoted = false;
       document.getElementById('answer-card').style.display = 'none';
       document.getElementById('answer-card').classList.remove('reveal-animate');
       document.getElementById('answer-song-info').style.display = 'none';
       document.getElementById('answer-album-art').style.display = 'none';
       document.getElementById('vote-status').textContent = '';
+      if (previousSong && !revealedSongs.some(s => s.trackId === previousSong.trackId)) {
+        revealedSongs.push(previousSong);
+        renderPreviousSongs();
+      }
       playSong(currentSong, currentIndex, totalSongs);
       renderVoteButtons();
     });

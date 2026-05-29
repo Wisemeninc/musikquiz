@@ -431,9 +431,13 @@
       showPlayingViewFromEvent(totalSongs, currentIndex, currentSong);
     });
 
-    socket.on('next-song', ({ currentIndex, currentSong, totalSongs }) => {
+    socket.on('next-song', ({ currentIndex, currentSong, totalSongs, previousSong }) => {
       document.getElementById('answer-card').style.display = 'none';
       document.getElementById('vote-count').textContent = '0';
+      if (previousSong && !masterRevealedSongs.some(s => s.trackId === previousSong.trackId)) {
+        masterRevealedSongs.push(previousSong);
+        renderMasterPreviousSongs();
+      }
       playSong(currentSong, currentIndex, totalSongs);
     });
 
@@ -537,11 +541,10 @@
       document.getElementById('lobby-view').style.display = 'none';
       document.getElementById('playing-view').style.display = 'block';
       document.getElementById('total-contestants').textContent = Object.keys(quiz.contestants).length;
-      // Restore only revealed songs
-      const revealed = quiz.revealedIndices || [];
-      if (quiz.queue && revealed.length > 0) {
-        for (const idx of revealed) {
-          const s = quiz.queue[idx];
+      // Restore all songs before current index
+      if (quiz.queue && quiz.currentIndex > 0) {
+        for (let i = 0; i < quiz.currentIndex; i++) {
+          const s = quiz.queue[i];
           if (s && !masterRevealedSongs.some(r => r.trackId === s.trackId)) {
             masterRevealedSongs.push({ title: s.title, artist: s.artist, addedBy: s.addedBy, trackId: s.trackId, albumArt: s.albumArt });
           }

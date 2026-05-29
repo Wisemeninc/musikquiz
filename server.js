@@ -547,17 +547,20 @@ io.on('connection', (socket) => {
     } else {
       saveQuiz(quiz);
       const song = quiz.queue[quiz.currentIndex];
-      // Full info to master
+      const prevSong = quiz.queue[quiz.currentIndex - 1];
+      // Full info to master (include previous song for history)
       io.to(quiz.masterId).emit('next-song', {
         currentIndex: quiz.currentIndex,
         currentSong: sanitizeSong(song),
-        totalSongs: quiz.queue.length
+        totalSongs: quiz.queue.length,
+        previousSong: prevSong ? { title: prevSong.title, artist: prevSong.artist, albumArt: prevSong.albumArt, trackId: prevSong.trackId, addedBy: prevSong.addedBy } : null
       });
       // Stripped info to contestants
       socket.to(`quiz-${quizId}`).emit('next-song', {
         currentIndex: quiz.currentIndex,
         currentSong: sanitizeSongForContestant(song),
-        totalSongs: quiz.queue.length
+        totalSongs: quiz.queue.length,
+        previousSong: prevSong ? { title: prevSong.title, artist: prevSong.artist, albumArt: prevSong.albumArt, trackId: prevSong.trackId, addedBy: prevSong.addedBy } : null
       });
       callback({ finished: false, currentIndex: quiz.currentIndex });
     }

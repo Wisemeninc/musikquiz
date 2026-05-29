@@ -581,7 +581,16 @@
         .sort((a, b) => b.score - a.score);
     }
 
+    // Expose to global scope for onclick handlers
+    window.loginSpotify = loginSpotify;
+    window.copyLink = copyLink;
+    window.startQuiz = startQuiz;
+    window.revealAnswer = revealAnswer;
+    window.nextSong = nextSong;
+    window.togglePlayback = togglePlayback;
+
     } // end initMaster
+
   </script>
 </body>
 </html>

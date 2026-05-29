@@ -117,8 +117,11 @@
         const stateLabel = q.state === 'lobby' ? 'Lobby' : q.state === 'playing' ? 'Playing' : 'Finished';
         const stateClass = q.state === 'finished' ? 'state-finished' : q.state === 'playing' ? 'state-playing' : 'state-lobby';
         const date = q.createdAt ? new Date(q.createdAt).toLocaleDateString() : '';
+        const clickAction = q.state === 'finished'
+          ? `toggleQuizSongs('${q.id}', this)`
+          : `window.location.href='/master/${q.id}'`;
         return `<div class="quiz-history-entry">
-          <div class="quiz-history-item" onclick="toggleQuizSongs('${q.id}', this)">
+          <div class="quiz-history-item" onclick="${clickAction}">
             <div class="quiz-history-info">
               <span class="quiz-history-name">${q.name}</span>
               <span class="quiz-history-meta">${q.id} &middot; ${q.contestants.length} players &middot; ${q.songCount} songs &middot; ${date}</span>

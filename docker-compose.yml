@@ -11,7 +11,7 @@ services:
       - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET}
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.musikquiz.rule=Host(`quiz.shitshow.it`)"
+      - "traefik.http.routers.musikquiz.rule=Host(`${DOMAIN}`)"
       - "traefik.http.routers.musikquiz.entrypoints=websecure"
       - "traefik.http.routers.musikquiz.tls.certresolver=letsencrypt"
       - "traefik.http.services.musikquiz.loadbalancer.server.port=3000"

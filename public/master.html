@@ -3,13 +3,23 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MusikQuiz - Quiz Master</title>
+  <title>OnlyMIP MusicQuiz - Quiz Master</title>
   <link rel="icon" type="image/svg+xml" href="/logo.svg">
   <link rel="stylesheet" href="/style.css">
+  <script src="/theme.js"></script>
 </head>
 <body>
   <div class="container">
-    <h1><a href="/" class="title-link"><img src="/logo.svg" style="height: 1.2em; vertical-align: middle; margin-right: 8px;">Quiz Master Panel</a></h1>
+    <div class="page-header">
+      <h1><a href="/" class="title-link"><img src="/logo.svg" class="logo-img">OnlyMIP Quiz Master Panel</a></h1>
+      <nav class="header-nav">
+        <a href="/quizmaster" class="nav-link">All Quizzes</a>
+        <select id="theme-select" class="nav-link theme-select">
+          <option value="dark">Dark Theme</option>
+          <option value="ua">UA Theme</option>
+        </select>
+      </nav>
+    </div>
 
     <!-- Password Gate -->
     <div id="password-gate" class="card">
@@ -143,6 +153,15 @@
     const socket = io();
     const quizId = window.location.pathname.split('/').pop();
 
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#x27;');
+    }
+
     // ─── Password Gate ────────────────────────────────────────────────────────
     let masterPassword = sessionStorage.getItem('master_password') || '';
 
@@ -223,6 +242,7 @@
     }
 
     window.addEventListener('message', (event) => {
+      if (event.origin !== window.location.origin) return;
       if (event.data.type === 'spotify-auth-success') {
         spotifyAccessToken = event.data.access_token;
         spotifyRefreshToken = event.data.refresh_token;
@@ -272,7 +292,7 @@
       }
 
       spotifyPlayer = new Spotify.Player({
-        name: 'MusikQuiz',
+        name: 'OnlyMIP MusicQuiz',
         getOAuthToken: async (cb) => {
           const token = await getValidToken();
           cb(token);
@@ -395,7 +415,7 @@
     // ─── Quiz Logic ───────────────────────────────────────────────────────────
 
     // Rejoin as master
-    socket.emit('rejoin-master', { quizId }, (response) => {
+    socket.emit('rejoin-master', { quizId, password: masterPassword }, (response) => {
       if (response.error) {
         alert('Error: ' + response.error);
         window.location.href = '/';
@@ -461,8 +481,8 @@
       document.getElementById('answer-card').style.display = 'block';
       document.getElementById('answer-name').textContent = addedBy;
       if (title && trackId) {
-        const spotifyUrl = `https://open.spotify.com/track/${trackId}`;
-        document.getElementById('answer-song-title').innerHTML = `<a href="${spotifyUrl}" target="_blank" rel="noopener">${title}</a>`;
+        const spotifyUrl = `https://open.spotify.com/track/${escapeHtml(trackId)}`;
+        document.getElementById('answer-song-title').innerHTML = `<a href="${spotifyUrl}" target="_blank" rel="noopener">${escapeHtml(title)}</a>`;
         document.getElementById('answer-song-artist').textContent = artist || '';
         document.getElementById('answer-song-info').style.display = 'block';
         if (!masterRevealedSongs.some(s => s.trackId === trackId)) {
@@ -472,9 +492,13 @@
       }
       const votesHtml = Object.entries(votes).map(([voter, data]) => {
         const icon = data.correct ? '&#9989;' : '&#10060;';
-        return `<div class="vote-result">${icon} <strong>${voter}</strong> voted for "${data.votedFor}"</div>`;
+        return `<div class="vote-result">${icon} <strong>${escapeHtml(voter)}</strong> voted for "${escapeHtml(data.votedFor)}"</div>`;
       }).join('');
       document.getElementById('answer-votes').innerHTML = votesHtml;
+    });
+
+    socket.on('quiz-finished', ({ scores, songs }) => {
+      showFinishedView(scores, songs);
     });
 
     // Functions
@@ -484,14 +508,14 @@
       card.style.display = 'block';
       const html = masterRevealedSongs.slice().reverse().map((s, i) => {
         const num = masterRevealedSongs.length - i;
-        const spotifyUrl = `https://open.spotify.com/track/${s.trackId}`;
+        const spotifyUrl = `https://open.spotify.com/track/${escapeHtml(s.trackId)}`;
         return `<div class="quiz-song-row">
-          <img class="quiz-song-cover" src="${s.albumArt || ''}" alt="" />
+          <img class="quiz-song-cover" src="${escapeHtml(s.albumArt || '')}" alt="" />
           <div class="quiz-song-details">
-            <a href="${spotifyUrl}" target="_blank" rel="noopener" class="quiz-song-title">${num}. ${s.title}</a>
-            <span class="quiz-song-artist">${s.artist}</span>
+            <a href="${spotifyUrl}" target="_blank" rel="noopener" class="quiz-song-title">${num}. ${escapeHtml(s.title)}</a>
+            <span class="quiz-song-artist">${escapeHtml(s.artist)}</span>
           </div>
-          <span class="quiz-song-added-by">${s.addedBy}</span>
+          <span class="quiz-song-added-by">${escapeHtml(s.addedBy)}</span>
         </div>`;
       }).join('');
       document.getElementById('master-previous-songs-list').innerHTML = html;
@@ -509,7 +533,7 @@
 
       const html = list.map(c =>
         `<div class="contestant-item">
-          <span class="contestant-name">${c.username}</span>
+          <span class="contestant-name">${escapeHtml(c.username)}</span>
           <span class="song-badge">${c.songCount} songs</span>
         </div>`
       ).join('');
@@ -619,7 +643,7 @@
         const medal = i === 0 ? '&#129351;' : i === 1 ? '&#129352;' : i === 2 ? '&#129353;' : '';
         return `<div class="score-row ${i === 0 ? 'winner' : ''}">
           <span class="rank">${medal} #${i + 1}</span>
-          <span class="score-name">${s.username}</span>
+          <span class="score-name">${escapeHtml(s.username)}</span>
           <span class="score-value">${s.score} correct</span>
         </div>`;
       }).join('');
@@ -629,14 +653,14 @@
       const songList = songs || masterRevealedSongs;
       if (songList.length > 0) {
         const songsHtml = songList.map((s, i) => {
-          const spotifyUrl = `https://open.spotify.com/track/${s.trackId}`;
+          const spotifyUrl = `https://open.spotify.com/track/${escapeHtml(s.trackId)}`;
           return `<div class="quiz-song-row">
-            <img class="quiz-song-cover" src="${s.albumArt || ''}" alt="" />
+            <img class="quiz-song-cover" src="${escapeHtml(s.albumArt || '')}" alt="" />
             <div class="quiz-song-details">
-              <a href="${spotifyUrl}" target="_blank" rel="noopener" class="quiz-song-title">${i + 1}. ${s.title}</a>
-              <span class="quiz-song-artist">${s.artist}</span>
+              <a href="${spotifyUrl}" target="_blank" rel="noopener" class="quiz-song-title">${i + 1}. ${escapeHtml(s.title)}</a>
+              <span class="quiz-song-artist">${escapeHtml(s.artist)}</span>
             </div>
-            <span class="quiz-song-added-by">${s.addedBy}</span>
+            <span class="quiz-song-added-by">${escapeHtml(s.addedBy)}</span>
           </div>`;
         }).join('');
         document.getElementById('finished-songs-list').innerHTML = songsHtml;

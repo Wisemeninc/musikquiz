@@ -3,14 +3,24 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MusikQuiz</title>
+  <title>OnlyMIP MusicQuiz</title>
   <link rel="icon" type="image/svg+xml" href="/logo.svg">
   <link rel="stylesheet" href="/style.css">
+  <script src="/theme.js"></script>
 </head>
 <body>
   <div class="container">
-    <h1><a href="/" class="title-link"><img src="/logo.svg" style="height: 1.2em; vertical-align: middle; margin-right: 8px;">MusikQuiz</a></h1>
-    <p class="subtitle">Create a music quiz or join an existing one</p>
+    <div class="page-header">
+      <h1><a href="/" class="title-link"><img src="/logo.svg" class="logo-img">OnlyMIP MusicQuiz</a></h1>
+      <nav class="header-nav">
+        <a href="/quizmaster" class="nav-link">Quiz Master</a>
+        <select id="theme-select" class="nav-link theme-select">
+          <option value="dark">Dark Theme</option>
+          <option value="ua">UA Theme</option>
+        </select>
+      </nav>
+    </div>
+    <p class="subtitle">Join a music quiz</p>
 
     <div class="card">
       <h2>Join a Quiz</h2>
@@ -23,190 +33,13 @@
         <button type="submit" class="btn btn-secondary">Go to Quiz</button>
       </form>
     </div>
-
-    <!-- Quiz Master Section (password protected) -->
-    <div class="card" id="master-login-card">
-      <h2>Quiz Master</h2>
-      <form id="master-login-form">
-        <div class="form-group">
-          <label for="master-password">Master Password</label>
-          <input type="password" id="master-password" placeholder="Enter password" required>
-        </div>
-        <button type="submit" class="btn btn-primary">Unlock</button>
-        <p id="master-login-error" class="error" style="display:none;"></p>
-      </form>
-    </div>
-
-    <div id="master-panel" style="display:none;">
-      <div class="card">
-        <h2>Create a New Quiz</h2>
-        <form id="create-form">
-          <div class="form-group">
-            <label for="quiz-name">Quiz Name</label>
-            <input type="text" id="quiz-name" placeholder="Friday Night Music Quiz" required>
-          </div>
-          <div class="form-group">
-            <label for="songs-per-person">Songs per Person</label>
-            <input type="number" id="songs-per-person" min="1" max="20" value="3" required>
-          </div>
-          <button type="submit" class="btn btn-primary">Create Quiz</button>
-        </form>
-      </div>
-
-      <div class="card">
-        <h2>Previous Quizzes</h2>
-        <div id="quiz-history">
-          <p class="hint">Loading...</p>
-        </div>
-      </div>
-    </div>
   </div>
 
   <footer class="footer">
     <a href="https://github.com/Wisemeninc/musikquiz" target="_blank" rel="noopener">GitHub</a>
   </footer>
 
-  <script src="/socket.io/socket.io.js"></script>
   <script>
-    const socket = io();
-    let masterPassword = sessionStorage.getItem('master_password') || '';
-
-    // Auto-unlock if password is saved in session
-    if (masterPassword) {
-      verifyPassword(masterPassword);
-    }
-
-    // Master login
-    document.getElementById('master-login-form').addEventListener('submit', (e) => {
-      e.preventDefault();
-      const password = document.getElementById('master-password').value;
-      verifyPassword(password);
-    });
-
-    async function verifyPassword(password) {
-      const res = await fetch('/api/auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password })
-      });
-      if (res.ok) {
-        masterPassword = password;
-        sessionStorage.setItem('master_password', password);
-        document.getElementById('master-login-card').style.display = 'none';
-        document.getElementById('master-panel').style.display = 'block';
-        loadQuizHistory();
-      } else {
-        document.getElementById('master-login-error').textContent = 'Wrong password';
-        document.getElementById('master-login-error').style.display = 'block';
-        sessionStorage.removeItem('master_password');
-      }
-    }
-
-    async function loadQuizHistory() {
-      const res = await fetch('/api/quizzes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: masterPassword })
-      });
-      if (!res.ok) return;
-      const data = await res.json();
-      if (data.quizzes.length === 0) {
-        document.getElementById('quiz-history').innerHTML = '<p class="hint">No quizzes yet</p>';
-        return;
-      }
-      const html = data.quizzes.map(q => {
-        const stateLabel = q.state === 'lobby' ? 'Lobby' : q.state === 'playing' ? 'Playing' : 'Finished';
-        const stateClass = q.state === 'finished' ? 'state-finished' : q.state === 'playing' ? 'state-playing' : 'state-lobby';
-        const date = q.createdAt ? new Date(q.createdAt).toLocaleDateString() : '';
-        const resumeBtn = q.state !== 'finished'
-          ? `<a href="/master/${q.id}" class="btn btn-small btn-resume" onclick="event.stopPropagation()">Resume</a>`
-          : '';
-        return `<div class="quiz-history-entry" id="entry-${q.id}">
-          <div class="quiz-history-item" onclick="toggleQuizSongs('${q.id}', this)">
-            <div class="quiz-history-info">
-              <span class="quiz-history-name">${q.name}</span>
-              <span class="quiz-history-meta">${q.id} &middot; ${q.contestants.length} players &middot; ${q.songCount} songs &middot; ${date}</span>
-            </div>
-            <div class="quiz-history-actions">
-              ${resumeBtn}
-              <button class="btn btn-small btn-delete" onclick="event.stopPropagation(); deleteQuiz('${q.id}')">Delete</button>
-              <span class="quiz-state ${stateClass}">${stateLabel}</span>
-            </div>
-          </div>
-          <div class="quiz-songs-list" id="songs-${q.id}" style="display:none;"></div>
-        </div>`;
-      }).join('');
-      document.getElementById('quiz-history').innerHTML = html;
-    }
-
-    async function deleteQuiz(quizId) {
-      if (!confirm('Delete this quiz?')) return;
-      const res = await fetch('/api/quiz/' + quizId, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: masterPassword })
-      });
-      if (res.ok) {
-        document.getElementById('entry-' + quizId).remove();
-      } else {
-        alert('Failed to delete quiz');
-      }
-    }
-
-    async function toggleQuizSongs(quizId, el) {
-      const container = document.getElementById('songs-' + quizId);
-      if (container.style.display === 'block') {
-        container.style.display = 'none';
-        return;
-      }
-      if (container.dataset.loaded) {
-        container.style.display = 'block';
-        return;
-      }
-      container.innerHTML = '<p class="hint">Loading songs...</p>';
-      container.style.display = 'block';
-      const res = await fetch('/api/quiz/' + quizId, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: masterPassword })
-      });
-      if (!res.ok) {
-        container.innerHTML = '<p class="hint">Failed to load</p>';
-        return;
-      }
-      const data = await res.json();
-      container.dataset.loaded = 'true';
-      if (!data.songs || data.songs.length === 0) {
-        container.innerHTML = '<p class="hint">No songs played</p>';
-        return;
-      }
-      const songsHtml = data.songs.map((s, i) => {
-        const spotifyUrl = `https://open.spotify.com/track/${s.trackId}`;
-        return `<div class="quiz-song-row">
-          <img class="quiz-song-cover" src="${s.albumArt || ''}" alt="" />
-          <div class="quiz-song-details">
-            <a href="${spotifyUrl}" target="_blank" rel="noopener" class="quiz-song-title">${s.title}</a>
-            <span class="quiz-song-artist">${s.artist}</span>
-          </div>
-          <span class="quiz-song-added-by">${s.addedBy}</span>
-        </div>`;
-      }).join('');
-      container.innerHTML = songsHtml;
-    }
-
-    // Create quiz
-    document.getElementById('create-form').addEventListener('submit', (e) => {
-      e.preventDefault();
-      const quizName = document.getElementById('quiz-name').value;
-      const songsPerPerson = parseInt(document.getElementById('songs-per-person').value);
-
-      socket.emit('create-quiz', { quizName, songsPerPerson }, (response) => {
-        if (response.quizId) {
-          window.location.href = `/master/${response.quizId}`;
-        }
-      });
-    });
-
     // Join quiz
     document.getElementById('join-form').addEventListener('submit', (e) => {
       e.preventDefault();

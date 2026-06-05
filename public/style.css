@@ -1,3 +1,57 @@
+/* ── Theme Variables ──────────────────────────────────────────────────────── */
+:root {
+  --bg:               #161618;
+  --card-bg:          #1a1d21;
+  --input-bg:         #222527;
+  --hover-bg:         #2c2f33;
+  --text-primary:     #f6f7f8;
+  --text-muted:       #8a96a3;
+  --text-dim:         #6b7280;
+  --text-dimmer:      #4a4e54;
+  --placeholder:      #5a5e64;
+  --accent:           #00aff0;
+  --accent-hover:     #009ad6;
+  --accent-light:     #33c3ff;
+  --accent-rgb:       0, 175, 240;
+  --border:           rgba(255, 255, 255, 0.08);
+  --border-hover:     rgba(255, 255, 255, 0.12);
+  --border-nav:       rgba(255, 255, 255, 0.1);
+  --border-nav-hover: rgba(255, 255, 255, 0.2);
+  --input-border:     rgba(255, 255, 255, 0.1);
+  --border-subtle:    rgba(255, 255, 255, 0.06);
+  --btn-sec-bg:       #2c2f33;
+  --btn-sec-hover:    #3a3e44;
+  --progress-bg:      #2c2f33;
+  --btn-primary-text: #fff;
+}
+
+[data-theme="ua"] {
+  --bg:               #0a0f1e;
+  --card-bg:          #0f1a2e;
+  --input-bg:         #162238;
+  --hover-bg:         #1e2f45;
+  --text-primary:     #f0f4f8;
+  --text-muted:       #9ab0cc;
+  --text-dim:         #6b8aaa;
+  --text-dimmer:      #4a6a8a;
+  --placeholder:      #4a6a8a;
+  --accent:           #FFD700;
+  --accent-hover:     #e6c200;
+  --accent-light:     #ffe566;
+  --accent-rgb:       255, 215, 0;
+  --border:           rgba(0, 87, 183, 0.3);
+  --border-hover:     rgba(0, 87, 183, 0.5);
+  --border-nav:       rgba(255, 215, 0, 0.25);
+  --border-nav-hover: rgba(255, 215, 0, 0.5);
+  --input-border:     rgba(0, 87, 183, 0.4);
+  --border-subtle:    rgba(0, 87, 183, 0.2);
+  --btn-sec-bg:       #162238;
+  --btn-sec-hover:    #1e2f45;
+  --progress-bg:      #1e2f45;
+  --btn-primary-text: #0a0f1e;
+}
+
+/* ── Reset ────────────────────────────────────────────────────────────────── */
 * {
   box-sizing: border-box;
   margin: 0;
@@ -6,8 +60,8 @@
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
-  background: #161618;
-  color: #f6f7f8;
+  background: var(--bg);
+  color: var(--text-primary);
   min-height: 100vh;
   padding: 20px;
 }
@@ -21,17 +75,74 @@ h1 {
   text-align: center;
   font-size: 2rem;
   margin-bottom: 8px;
-  color: #f6f7f8;
+  color: var(--text-primary);
+}
+
+/* Page Header with nav */
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.page-header h1 {
+  margin-bottom: 0;
+}
+
+.header-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.nav-link {
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 0.85rem;
+  font-weight: 500;
+  padding: 6px 14px;
+  border-radius: 1000px;
+  border: 1px solid var(--border-nav);
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.nav-link:hover {
+  color: var(--text-primary);
+  border-color: var(--border-nav-hover);
+  background: var(--input-bg);
 }
 
 .title-link {
-  color: #f6f7f8;
+  color: var(--text-primary);
   text-decoration: none;
   transition: color 0.2s;
 }
 
 .title-link:hover {
-  color: #00aff0;
+  color: var(--accent);
+}
+
+/* Logo */
+.logo-img {
+  height: 1.8em;
+  vertical-align: middle;
+  margin-right: 8px;
+}
+
+/* Theme select dropdown */
+.theme-select {
+  background: none;
+  cursor: pointer;
+  font-family: inherit;
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 28px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238a96a3'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
 }
 
 /* Footer */
@@ -42,38 +153,38 @@ h1 {
 }
 
 .footer a {
-  color: #4a4e54;
+  color: var(--text-dimmer);
   text-decoration: none;
   transition: color 0.2s;
 }
 
 .footer a:hover {
-  color: #8a96a3;
+  color: var(--text-muted);
 }
 
 h2 {
   font-size: 1.3rem;
   margin-bottom: 12px;
-  color: #f6f7f8;
+  color: var(--text-primary);
 }
 
 .subtitle {
   text-align: center;
-  color: #8a96a3;
+  color: var(--text-muted);
   margin-bottom: 24px;
 }
 
 .card {
-  background: #1a1d21;
+  background: var(--card-bg);
   border-radius: 16px;
   padding: 20px;
   margin-bottom: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border);
   transition: border-color 0.2s;
 }
 
 .card:hover {
-  border-color: rgba(255, 255, 255, 0.12);
+  border-color: var(--border-hover);
 }
 
 .form-group {
@@ -83,7 +194,7 @@ h2 {
 .form-group label {
   display: block;
   font-size: 0.9rem;
-  color: #8a96a3;
+  color: var(--text-muted);
   margin-bottom: 6px;
 }
 
@@ -93,9 +204,9 @@ input[type="password"] {
   width: 100%;
   padding: 12px 16px;
   border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: #222527;
-  color: #f6f7f8;
+  border: 1px solid var(--input-border);
+  background: var(--input-bg);
+  color: var(--text-primary);
   font-size: 1rem;
   transition: border-color 0.2s, box-shadow 0.2s;
 }
@@ -104,14 +215,14 @@ input[type="text"]:focus,
 input[type="number"]:focus,
 input[type="password"]:focus {
   outline: none;
-  border-color: #00aff0;
-  box-shadow: 0 0 0 3px rgba(0, 175, 240, 0.15);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.15);
 }
 
 input[type="text"]::placeholder,
 input[type="number"]::placeholder,
 input[type="password"]::placeholder {
-  color: #5a5e64;
+  color: var(--placeholder);
 }
 
 .btn {
@@ -128,22 +239,22 @@ input[type="password"]::placeholder {
 }
 
 .btn-primary {
-  background: #00aff0;
-  color: #fff;
+  background: var(--accent);
+  color: var(--btn-primary-text);
 }
 
 .btn-primary:hover {
-  background: #009ad6;
-  box-shadow: 0 4px 16px rgba(0, 175, 240, 0.3);
+  background: var(--accent-hover);
+  box-shadow: 0 4px 16px rgba(var(--accent-rgb), 0.3);
 }
 
 .btn-secondary {
-  background: #2c2f33;
-  color: #f6f7f8;
+  background: var(--btn-sec-bg);
+  color: var(--text-primary);
 }
 
 .btn-secondary:hover {
-  background: #3a3e44;
+  background: var(--btn-sec-hover);
 }
 
 .btn-small {
@@ -167,8 +278,8 @@ input[type="password"]::placeholder {
 }
 
 .btn-vote {
-  background: #2c2f33;
-  color: #f6f7f8;
+  background: var(--btn-sec-bg);
+  color: var(--text-primary);
   margin: 4px;
   padding: 12px 20px;
   font-size: 1rem;
@@ -176,9 +287,9 @@ input[type="password"]::placeholder {
 }
 
 .btn-vote:hover:not(:disabled) {
-  background: #00aff0;
-  color: #fff;
-  box-shadow: 0 4px 16px rgba(0, 175, 240, 0.3);
+  background: var(--accent);
+  color: var(--btn-primary-text);
+  box-shadow: 0 4px 16px rgba(var(--accent-rgb), 0.3);
 }
 
 .btn-vote:disabled {
@@ -200,7 +311,7 @@ input[type="password"]::placeholder {
 
 .hint {
   font-size: 0.85rem;
-  color: #6b7280;
+  color: var(--text-dim);
   margin-top: 8px;
 }
 
@@ -221,7 +332,7 @@ input[type="password"]::placeholder {
 
 .share-link label {
   font-size: 0.9rem;
-  color: #8a96a3;
+  color: var(--text-muted);
   margin-bottom: 6px;
   display: block;
 }
@@ -247,13 +358,13 @@ input[type="password"]::placeholder {
   justify-content: space-between;
   align-items: center;
   padding: 10px 14px;
-  background: #222527;
+  background: var(--input-bg);
   border-radius: 12px;
   transition: background 0.2s;
 }
 
 .contestant-item:hover {
-  background: #2c2f33;
+  background: var(--hover-bg);
 }
 
 .contestant-name {
@@ -261,8 +372,8 @@ input[type="password"]::placeholder {
 }
 
 .song-badge {
-  background: rgba(0, 175, 240, 0.15);
-  color: #00aff0;
+  background: rgba(var(--accent-rgb), 0.15);
+  color: var(--accent);
   padding: 3px 12px;
   border-radius: 1000px;
   font-size: 0.8rem;
@@ -285,14 +396,14 @@ input[type="password"]::placeholder {
   align-items: center;
   gap: 10px;
   padding: 10px;
-  background: #222527;
+  background: var(--input-bg);
   border-radius: 12px;
   margin-bottom: 8px;
   transition: background 0.2s;
 }
 
 .search-result:hover {
-  background: #2c2f33;
+  background: var(--hover-bg);
 }
 
 .result-thumb {
@@ -316,18 +427,18 @@ input[type="password"]::placeholder {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
-  color: #f6f7f8;
+  color: var(--text-primary);
 }
 
 .result-duration {
   font-size: 0.75rem;
-  color: #6b7280;
+  color: var(--text-dim);
   margin-top: 2px;
 }
 
 .result-artist {
   font-size: 0.8rem;
-  color: #8a96a3;
+  color: var(--text-muted);
   margin-top: 2px;
 }
 
@@ -337,14 +448,14 @@ input[type="password"]::placeholder {
   align-items: center;
   gap: 10px;
   padding: 10px;
-  background: #222527;
+  background: var(--input-bg);
   border-radius: 12px;
   margin-bottom: 8px;
   transition: background 0.2s;
 }
 
 .song-item:hover {
-  background: #2c2f33;
+  background: var(--hover-bg);
 }
 
 .song-thumb {
@@ -368,12 +479,12 @@ input[type="password"]::placeholder {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #f6f7f8;
+  color: var(--text-primary);
 }
 
 .song-artist {
   font-size: 0.75rem;
-  color: #6b7280;
+  color: var(--text-dim);
 }
 
 /* Player */
@@ -385,7 +496,7 @@ input[type="password"]::placeholder {
 /* Spotify Auth Banner */
 .spotify-banner {
   border: 1px solid rgba(29, 185, 84, 0.3);
-  background: #1a1d21;
+  background: var(--card-bg);
 }
 
 .spotify-banner.connected {
@@ -403,7 +514,7 @@ input[type="password"]::placeholder {
 
 #spotify-status-text {
   font-size: 0.9rem;
-  color: #8a96a3;
+  color: var(--text-muted);
 }
 
 .connected #spotify-status-text {
@@ -424,10 +535,10 @@ input[type="password"]::placeholder {
 
 /* SDK Player */
 .sdk-player {
-  background: #1a1d21;
+  background: var(--card-bg);
   border-radius: 16px;
   padding: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border);
 }
 
 .sdk-track-info {
@@ -453,7 +564,7 @@ input[type="password"]::placeholder {
 .sdk-track-name {
   font-size: 1rem;
   font-weight: 500;
-  color: #f6f7f8;
+  color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -461,7 +572,7 @@ input[type="password"]::placeholder {
 
 .sdk-track-artist {
   font-size: 0.85rem;
-  color: #8a96a3;
+  color: var(--text-muted);
   margin-top: 3px;
 }
 
@@ -474,20 +585,20 @@ input[type="password"]::placeholder {
   align-items: center;
   gap: 8px;
   font-size: 0.75rem;
-  color: #6b7280;
+  color: var(--text-dim);
 }
 
 .sdk-progress-bar {
   flex: 1;
   height: 4px;
-  background: #2c2f33;
+  background: var(--progress-bg);
   border-radius: 2px;
   overflow: hidden;
 }
 
 .sdk-progress-fill {
   height: 100%;
-  background: #00aff0;
+  background: var(--accent);
   border-radius: 2px;
   transition: width 1s linear;
   width: 0%;
@@ -497,35 +608,35 @@ input[type="password"]::placeholder {
 .answer-song-info {
   margin-bottom: 12px;
   padding: 12px;
-  background: #222527;
+  background: var(--input-bg);
   border-radius: 12px;
 }
 
 .answer-song-title {
   font-size: 1rem;
-  color: #f6f7f8;
+  color: var(--text-primary);
 }
 
 .answer-song-title a {
-  color: #00aff0;
+  color: var(--accent);
   text-decoration: none;
   transition: color 0.2s;
 }
 
 .answer-song-title a:hover {
   text-decoration: underline;
-  color: #33c3ff;
+  color: var(--accent-light);
 }
 
 .answer-song-artist {
   font-size: 0.85rem;
-  color: #8a96a3;
+  color: var(--text-muted);
   margin-top: 3px;
 }
 
 .song-counter {
   font-size: 1rem;
-  color: #8a96a3;
+  color: var(--text-muted);
   margin-bottom: 8px;
 }
 
@@ -547,13 +658,13 @@ input[type="password"]::placeholder {
   gap: 8px;
   cursor: pointer;
   font-size: 0.9rem;
-  color: #8a96a3;
+  color: var(--text-muted);
 }
 
 .toggle-label input[type="checkbox"] {
   width: 18px;
   height: 18px;
-  accent-color: #00aff0;
+  accent-color: var(--accent);
 }
 
 /* Voting */
@@ -583,7 +694,7 @@ input[type="password"]::placeholder {
   width: 240px;
   height: 240px;
   border-radius: 16px;
-  box-shadow: 0 8px 40px rgba(0, 175, 240, 0.35);
+  box-shadow: 0 8px 40px rgba(var(--accent-rgb), 0.35);
   animation: coverPop 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
@@ -622,14 +733,14 @@ input[type="password"]::placeholder {
   align-items: center;
   gap: 12px;
   padding: 14px;
-  background: #222527;
+  background: var(--input-bg);
   border-radius: 12px;
   margin-bottom: 8px;
   transition: background 0.2s;
 }
 
 .score-row:hover {
-  background: #2c2f33;
+  background: var(--hover-bg);
 }
 
 .score-row.winner {
@@ -638,8 +749,8 @@ input[type="password"]::placeholder {
 }
 
 .score-row.highlight {
-  border: 1px solid rgba(0, 175, 240, 0.5);
-  background: rgba(0, 175, 240, 0.05);
+  border: 1px solid rgba(var(--accent-rgb), 0.5);
+  background: rgba(var(--accent-rgb), 0.05);
 }
 
 .rank {
@@ -654,7 +765,7 @@ input[type="password"]::placeholder {
 
 .score-value {
   font-size: 0.9rem;
-  color: #8a96a3;
+  color: var(--text-muted);
 }
 
 /* Previous Songs */
@@ -663,19 +774,19 @@ input[type="password"]::placeholder {
   align-items: center;
   gap: 10px;
   padding: 10px 14px;
-  background: #222527;
+  background: var(--input-bg);
   border-radius: 12px;
   margin-bottom: 6px;
   transition: background 0.2s;
 }
 
 .previous-song-item:hover {
-  background: #2c2f33;
+  background: var(--hover-bg);
 }
 
 .previous-song-num {
   font-size: 0.8rem;
-  color: #4a4e54;
+  color: var(--text-dimmer);
   min-width: 28px;
 }
 
@@ -688,7 +799,7 @@ input[type="password"]::placeholder {
 
 .previous-song-title {
   font-size: 0.85rem;
-  color: #00aff0;
+  color: var(--accent);
   text-decoration: none;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -698,12 +809,12 @@ input[type="password"]::placeholder {
 
 .previous-song-title:hover {
   text-decoration: underline;
-  color: #33c3ff;
+  color: var(--accent-light);
 }
 
 .previous-song-artist {
   font-size: 0.75rem;
-  color: #6b7280;
+  color: var(--text-dim);
 }
 
 /* Quiz History */
@@ -712,7 +823,7 @@ input[type="password"]::placeholder {
   align-items: center;
   justify-content: space-between;
   padding: 14px;
-  background: #222527;
+  background: var(--input-bg);
   border-radius: 12px;
   margin-bottom: 8px;
   text-decoration: none;
@@ -722,7 +833,7 @@ input[type="password"]::placeholder {
 }
 
 .quiz-history-item:hover {
-  background: #2c2f33;
+  background: var(--hover-bg);
 }
 
 .quiz-history-info {
@@ -765,12 +876,12 @@ input[type="password"]::placeholder {
 
 .quiz-history-name {
   font-weight: 500;
-  color: #f6f7f8;
+  color: var(--text-primary);
 }
 
 .quiz-history-meta {
   font-size: 0.8rem;
-  color: #6b7280;
+  color: var(--text-dim);
 }
 
 .quiz-state {
@@ -783,8 +894,8 @@ input[type="password"]::placeholder {
 }
 
 .state-lobby {
-  background: rgba(0, 175, 240, 0.12);
-  color: #00aff0;
+  background: rgba(var(--accent-rgb), 0.12);
+  color: var(--accent);
 }
 
 .state-playing {
@@ -804,10 +915,10 @@ input[type="password"]::placeholder {
 
 .quiz-songs-list {
   padding: 10px 14px;
-  background: #1a1d21;
+  background: var(--card-bg);
   border-radius: 0 0 12px 12px;
   margin-top: -4px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-subtle);
   border-top: none;
 }
 
@@ -816,7 +927,7 @@ input[type="password"]::placeholder {
   align-items: center;
   gap: 12px;
   padding: 10px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .quiz-song-row:last-child {
@@ -840,7 +951,7 @@ input[type="password"]::placeholder {
 }
 
 .quiz-song-title {
-  color: #f6f7f8;
+  color: var(--text-primary);
   text-decoration: none;
   font-size: 0.9rem;
   font-weight: 500;
@@ -851,11 +962,11 @@ input[type="password"]::placeholder {
 }
 
 .quiz-song-title:hover {
-  color: #00aff0;
+  color: var(--accent);
 }
 
 .quiz-song-artist {
-  color: #6b7280;
+  color: var(--text-dim);
   font-size: 0.8rem;
   white-space: nowrap;
   overflow: hidden;
@@ -863,7 +974,7 @@ input[type="password"]::placeholder {
 }
 
 .quiz-song-added-by {
-  color: #00aff0;
+  color: var(--accent);
   font-size: 0.8rem;
   font-weight: 500;
   white-space: nowrap;
@@ -875,7 +986,7 @@ input[type="password"]::placeholder {
   body {
     padding: 12px;
   }
-  
+
   h1 {
     font-size: 1.5rem;
   }

@@ -3,13 +3,23 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MusikQuiz - Join</title>
+  <title>OnlyMIP MusicQuiz - Join</title>
   <link rel="icon" type="image/svg+xml" href="/logo.svg">
   <link rel="stylesheet" href="/style.css">
+  <script src="/theme.js"></script>
 </head>
 <body>
   <div class="container">
-    <h1><a href="/" class="title-link"><img src="/logo.svg" style="height: 1.2em; vertical-align: middle; margin-right: 8px;">MusikQuiz</a></h1>
+    <div class="page-header">
+      <h1><a href="/" class="title-link"><img src="/logo.svg" class="logo-img">OnlyMIP MusicQuiz</a></h1>
+      <nav class="header-nav">
+        <a href="/quizmaster" class="nav-link">Quiz Master</a>
+        <select id="theme-select" class="nav-link theme-select">
+          <option value="dark">Dark Theme</option>
+          <option value="ua">UA Theme</option>
+        </select>
+      </nav>
+    </div>
 
     <!-- Login View -->
     <div id="login-view">
@@ -115,11 +125,19 @@
     let hasVoted = false;
     let revealedSongs = [];
 
-    // Restore session
-    const savedUsername = sessionStorage.getItem(`quiz-${quizId}-username`);
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#x27;');
+    }
+
+    // Restore session — use localStorage so it survives tab close/reopen
+    const savedUsername = localStorage.getItem(`quiz-${quizId}-username`);
     if (savedUsername) {
       document.getElementById('username').value = savedUsername;
-      // Auto-rejoin if we have a saved session
       socket.emit('join-quiz', { quizId, username: savedUsername }, (response) => {
         if (response.error) {
           // Can't auto-rejoin, show login form
@@ -132,8 +150,24 @@
         document.getElementById('max-songs').textContent = quiz.songsPerPerson;
         document.getElementById('song-max').textContent = quiz.songsPerPerson;
         updateContestantsList(quiz.contestants);
-        if (quiz.state === 'playing') {
+
+        // Restore user's own songs
+        if (response.mySongs && response.mySongs.length > 0) {
+          mySongs = response.mySongs;
+          updateMySongs();
+        }
+
+        if (quiz.state === 'finished') {
+          showFinishedView(response.scores || [], response.songs || []);
+        } else if (quiz.state === 'playing') {
+          // Restore vote status
+          if (response.myVote) {
+            hasVoted = true;
+          }
           showPlayingView(quiz);
+          if (response.myVote) {
+            document.getElementById('vote-status').textContent = `You voted for ${response.myVote}`;
+          }
         } else {
           document.getElementById('lobby-view').style.display = 'block';
         }
@@ -154,7 +188,7 @@
         }
 
         myUsername = username;
-        sessionStorage.setItem(`quiz-${quizId}-username`, username);
+        localStorage.setItem(`quiz-${quizId}-username`, username);
         const quiz = response.quiz;
 
         document.getElementById('login-view').style.display = 'none';
@@ -164,7 +198,15 @@
 
         updateContestantsList(quiz.contestants);
 
-        if (quiz.state === 'playing') {
+        // Restore songs if rejoining mid-lobby
+        if (response.mySongs && response.mySongs.length > 0) {
+          mySongs = response.mySongs;
+          updateMySongs();
+        }
+
+        if (quiz.state === 'finished') {
+          showFinishedView(response.scores || [], response.songs || []);
+        } else if (quiz.state === 'playing') {
           showPlayingView(quiz);
         } else {
           document.getElementById('lobby-view').style.display = 'block';
@@ -199,11 +241,11 @@
 
         const html = response.tracks.map(t => `
           <div class="search-result">
-            <img src="${t.albumArt}" alt="" class="result-thumb">
+            <img src="${escapeHtml(t.albumArt)}" alt="" class="result-thumb">
             <div class="result-info">
-              <div class="result-title">${t.title}</div>
-              <div class="result-artist">${t.artist}</div>
-              <div class="result-duration">${t.duration}</div>
+              <div class="result-title">${escapeHtml(t.title)}</div>
+              <div class="result-artist">${escapeHtml(t.artist)}</div>
+              <div class="result-duration">${escapeHtml(t.duration)}</div>
             </div>
             <button class="btn btn-small btn-add" onclick='addSong(${JSON.stringify(t).replace(/'/g, "&#39;")})'>Add</button>
           </div>
@@ -242,10 +284,10 @@
       }
       const html = mySongs.map((s, i) => `
         <div class="song-item">
-          <img src="${s.albumArt}" alt="" class="song-thumb">
+          <img src="${escapeHtml(s.albumArt)}" alt="" class="song-thumb">
           <div class="song-info">
-            <span class="song-title">${s.title}</span>
-            <span class="song-artist">${s.artist}</span>
+            <span class="song-title">${escapeHtml(s.title)}</span>
+            <span class="song-artist">${escapeHtml(s.artist)}</span>
           </div>
           <button class="btn btn-small btn-danger" onclick="removeSong(${i})">Remove</button>
         </div>
@@ -259,7 +301,7 @@
         const name = typeof c === 'string' ? c : c.username;
         const count = typeof c === 'object' ? c.songCount : 0;
         return `<div class="contestant-item">
-          <span class="contestant-name">${name}</span>
+          <span class="contestant-name">${escapeHtml(name)}</span>
           <span class="song-badge">${count} songs</span>
         </div>`;
       }).join('');
@@ -312,14 +354,14 @@
       document.getElementById('answer-card').classList.add('reveal-animate');
       document.getElementById('answer-name').textContent = addedBy;
       if (albumArt) {
-        document.getElementById('answer-cover-img').src = albumArt;
+        document.getElementById('answer-cover-img').src = escapeHtml(albumArt);
         document.getElementById('answer-album-art').style.display = 'block';
       } else {
         document.getElementById('answer-album-art').style.display = 'none';
       }
       if (title) {
-        const spotifyUrl = `https://open.spotify.com/track/${trackId}`;
-        document.getElementById('answer-song-title').innerHTML = `<a href="${spotifyUrl}" target="_blank" rel="noopener">${title}</a>`;
+        const spotifyUrl = `https://open.spotify.com/track/${escapeHtml(trackId)}`;
+        document.getElementById('answer-song-title').innerHTML = `<a href="${spotifyUrl}" target="_blank" rel="noopener">${escapeHtml(title)}</a>`;
         document.getElementById('answer-song-artist').textContent = artist || '';
         document.getElementById('answer-song-info').style.display = 'block';
 
@@ -331,7 +373,7 @@
       }
       const votesHtml = Object.entries(votes).map(([voter, data]) => {
         const icon = data.correct ? '&#9989;' : '&#10060;';
-        return `<div class="vote-result">${icon} <strong>${voter}</strong> voted for "${data.votedFor}"</div>`;
+        return `<div class="vote-result">${icon} <strong>${escapeHtml(voter)}</strong> voted for "${escapeHtml(data.votedFor)}"</div>`;
       }).join('');
       document.getElementById('answer-votes').innerHTML = votesHtml;
     });
@@ -366,7 +408,7 @@
     function renderVoteButtons() {
       const html = contestants
         .filter(name => name !== myUsername)
-        .map(name => `<button class="btn btn-vote" onclick="vote('${name}')" ${hasVoted ? 'disabled' : ''}>${name}</button>`)
+        .map(name => `<button class="btn btn-vote" onclick="vote('${escapeHtml(name)}')" ${hasVoted ? 'disabled' : ''}>${escapeHtml(name)}</button>`)
         .join('');
       document.getElementById('vote-buttons').innerHTML = html;
     }
@@ -395,7 +437,7 @@
         const isMe = s.username === myUsername ? ' highlight' : '';
         return `<div class="score-row${isMe} ${i === 0 ? 'winner' : ''}">
           <span class="rank">${medal} #${i + 1}</span>
-          <span class="score-name">${s.username}</span>
+          <span class="score-name">${escapeHtml(s.username)}</span>
           <span class="score-value">${s.score} correct</span>
         </div>`;
       }).join('');
@@ -405,14 +447,14 @@
       const songList = songs || revealedSongs;
       if (songList.length > 0) {
         const songsHtml = songList.map((s, i) => {
-          const spotifyUrl = `https://open.spotify.com/track/${s.trackId}`;
+          const spotifyUrl = `https://open.spotify.com/track/${escapeHtml(s.trackId)}`;
           return `<div class="quiz-song-row">
-            <img class="quiz-song-cover" src="${s.albumArt || ''}" alt="" />
+            <img class="quiz-song-cover" src="${escapeHtml(s.albumArt || '')}" alt="" />
             <div class="quiz-song-details">
-              <a href="${spotifyUrl}" target="_blank" rel="noopener" class="quiz-song-title">${i + 1}. ${s.title}</a>
-              <span class="quiz-song-artist">${s.artist}</span>
+              <a href="${spotifyUrl}" target="_blank" rel="noopener" class="quiz-song-title">${i + 1}. ${escapeHtml(s.title)}</a>
+              <span class="quiz-song-artist">${escapeHtml(s.artist)}</span>
             </div>
-            <span class="quiz-song-added-by">${s.addedBy}</span>
+            <span class="quiz-song-added-by">${escapeHtml(s.addedBy)}</span>
           </div>`;
         }).join('');
         document.getElementById('finished-songs-list').innerHTML = songsHtml;
@@ -424,12 +466,12 @@
       document.getElementById('previous-songs-card').style.display = 'block';
       const html = revealedSongs.slice().reverse().map((s, i) => {
         const num = revealedSongs.length - i;
-        const spotifyUrl = `https://open.spotify.com/track/${s.trackId}`;
+        const spotifyUrl = `https://open.spotify.com/track/${escapeHtml(s.trackId)}`;
         return `<div class="previous-song-item">
           <span class="previous-song-num">#${num}</span>
           <div class="previous-song-info">
-            <a href="${spotifyUrl}" target="_blank" rel="noopener" class="previous-song-title">${s.title}</a>
-            <span class="previous-song-artist">${s.artist} &middot; ${s.addedBy}</span>
+            <a href="${spotifyUrl}" target="_blank" rel="noopener" class="previous-song-title">${escapeHtml(s.title)}</a>
+            <span class="previous-song-artist">${escapeHtml(s.artist)} &middot; ${escapeHtml(s.addedBy)}</span>
           </div>
         </div>`;
       }).join('');

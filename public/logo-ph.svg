@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <!-- Pure black square background -->
+  <rect x="0" y="0" width="512" height="512" rx="64" fill="#000000"/>
+
+  <!-- MIP text in white -->
+  <text x="60" y="295" font-family="Impact, 'Arial Black', sans-serif"
+        font-weight="900" font-size="150" fill="#ffffff" letter-spacing="-4">MIP</text>
+
+  <!-- Orange pill badge -->
+  <rect x="248" y="178" width="218" height="148" rx="32" fill="#ff9000"/>
+
+  <!-- HUB text in black on orange pill -->
+  <text x="357" y="295" font-family="Impact, 'Arial Black', sans-serif"
+        font-weight="900" font-size="150" fill="#000000" text-anchor="middle" letter-spacing="-4">HUB</text>
+
+  <!-- Tagline -->
+  <text x="256" y="420" font-family="system-ui, -apple-system, sans-serif"
+        font-weight="700" font-size="38" fill="#ff9000" text-anchor="middle" letter-spacing="6">
+    MUSIC QUIZ
+  </text>
+</svg>

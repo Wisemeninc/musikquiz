@@ -51,6 +51,58 @@
   --btn-primary-text: #0a0f1e;
 }
 
+[data-theme="tpb"] {
+  --bg:               #0d0d0d;
+  --card-bg:          #1a1a1a;
+  --input-bg:         #222222;
+  --hover-bg:         #2a2a2a;
+  --text-primary:     #f0f0f0;
+  --text-muted:       #999999;
+  --text-dim:         #666666;
+  --text-dimmer:      #444444;
+  --placeholder:      #555555;
+  --accent:           #f0c000;
+  --accent-hover:     #d4a800;
+  --accent-light:     #f5d040;
+  --accent-rgb:       240, 192, 0;
+  --border:           rgba(240, 192, 0, 0.15);
+  --border-hover:     rgba(240, 192, 0, 0.28);
+  --border-nav:       rgba(240, 192, 0, 0.2);
+  --border-nav-hover: rgba(240, 192, 0, 0.45);
+  --input-border:     rgba(240, 192, 0, 0.2);
+  --border-subtle:    rgba(240, 192, 0, 0.1);
+  --btn-sec-bg:       #2a2a2a;
+  --btn-sec-hover:    #333333;
+  --progress-bg:      #2a2a2a;
+  --btn-primary-text: #0d0d0d;
+}
+
+[data-theme="ph"] {
+  --bg:               #1b1b1b;
+  --card-bg:          #242424;
+  --input-bg:         #2e2e2e;
+  --hover-bg:         #383838;
+  --text-primary:     #ffffff;
+  --text-muted:       #999999;
+  --text-dim:         #777777;
+  --text-dimmer:      #555555;
+  --placeholder:      #606060;
+  --accent:           #ff9000;
+  --accent-hover:     #e68000;
+  --accent-light:     #ffaa33;
+  --accent-rgb:       255, 144, 0;
+  --border:           rgba(255, 144, 0, 0.15);
+  --border-hover:     rgba(255, 144, 0, 0.28);
+  --border-nav:       rgba(255, 144, 0, 0.2);
+  --border-nav-hover: rgba(255, 144, 0, 0.45);
+  --input-border:     rgba(255, 144, 0, 0.2);
+  --border-subtle:    rgba(255, 144, 0, 0.1);
+  --btn-sec-bg:       #333333;
+  --btn-sec-hover:    #404040;
+  --progress-bg:      #333333;
+  --btn-primary-text: #fff;
+}
+
 /* ── Reset ────────────────────────────────────────────────────────────────── */
 * {
   box-sizing: border-box;
@@ -127,9 +179,11 @@ h1 {
 
 /* Logo */
 .logo-img {
-  height: 1.8em;
+  height: 2.8em;
+  width: 2.8em;
   vertical-align: middle;
   margin-right: 8px;
+  border-radius: 8px;
 }
 
 /* Theme select dropdown */

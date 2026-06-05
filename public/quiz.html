@@ -15,8 +15,10 @@
       <nav class="header-nav">
         <a href="/quizmaster" class="nav-link">Quiz Master</a>
         <select id="theme-select" class="nav-link theme-select">
-          <option value="dark">Dark Theme</option>
+          <option value="dark">OF Theme</option>
           <option value="ua">UA Theme</option>
+          <option value="tpb">TPB Theme</option>
+          <option value="ph">PH Theme</option>
         </select>
       </nav>
     </div>
@@ -367,7 +369,7 @@
 
         // Add to previous songs list (only once)
         if (!revealedSongs.some(s => s.trackId === trackId)) {
-          revealedSongs.push({ title, artist, addedBy, trackId });
+          revealedSongs.push({ title, artist, addedBy, trackId, albumArt });
           renderPreviousSongs();
         }
       }
@@ -467,12 +469,13 @@
       const html = revealedSongs.slice().reverse().map((s, i) => {
         const num = revealedSongs.length - i;
         const spotifyUrl = `https://open.spotify.com/track/${escapeHtml(s.trackId)}`;
-        return `<div class="previous-song-item">
-          <span class="previous-song-num">#${num}</span>
-          <div class="previous-song-info">
-            <a href="${spotifyUrl}" target="_blank" rel="noopener" class="previous-song-title">${escapeHtml(s.title)}</a>
-            <span class="previous-song-artist">${escapeHtml(s.artist)} &middot; ${escapeHtml(s.addedBy)}</span>
+        return `<div class="quiz-song-row">
+          <img class="quiz-song-cover" src="${escapeHtml(s.albumArt || '')}" alt="" />
+          <div class="quiz-song-details">
+            <a href="${spotifyUrl}" target="_blank" rel="noopener" class="quiz-song-title">${num}. ${escapeHtml(s.title)}</a>
+            <span class="quiz-song-artist">${escapeHtml(s.artist)}</span>
           </div>
+          <span class="quiz-song-added-by">${escapeHtml(s.addedBy)}</span>
         </div>`;
       }).join('');
       document.getElementById('previous-songs-list').innerHTML = html;

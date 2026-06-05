@@ -15,8 +15,10 @@
       <nav class="header-nav">
         <a href="/quizmaster" class="nav-link">All Quizzes</a>
         <select id="theme-select" class="nav-link theme-select">
-          <option value="dark">Dark Theme</option>
+          <option value="dark">OF Theme</option>
           <option value="ua">UA Theme</option>
+          <option value="tpb">TPB Theme</option>
+          <option value="ph">PH Theme</option>
         </select>
       </nav>
     </div>
@@ -162,6 +164,19 @@
         .replace(/'/g, '&#x27;');
     }
 
+    // Global flags shared between top-level and initMaster scopes
+    // (must be at top-level so Spotify SDK can find this callback when it loads)
+    let spotifySDKReady = false;
+    let pendingSDKInit = false;
+    let _initSpotifyPlayer = null;  // set inside initMaster
+
+    window.onSpotifyWebPlaybackSDKReady = () => {
+      spotifySDKReady = true;
+      if (pendingSDKInit && typeof _initSpotifyPlayer === 'function') {
+        _initSpotifyPlayer();
+      }
+    };
+
     // ─── Password Gate ────────────────────────────────────────────────────────
     let masterPassword = sessionStorage.getItem('master_password') || '';
 
@@ -219,6 +234,9 @@
       updateAuthUI(false);
     }
 
+    // Expose so the global SDK ready callback can trigger init
+    _initSpotifyPlayer = initSpotifyPlayer;
+
     function updateAuthUI(connected) {
       const banner = document.getElementById('spotify-auth-banner');
       const statusText = document.getElementById('spotify-status-text');
@@ -238,23 +256,41 @@
       const w = 450, h = 600;
       const left = (screen.width - w) / 2;
       const top = (screen.height - h) / 2;
+      // Clear any stale pending result before opening popup
+      try { localStorage.removeItem('spotify_auth_pending'); } catch(e){}
       window.open('/auth/spotify', 'spotify-auth', `width=${w},height=${h},left=${left},top=${top}`);
     }
 
-    window.addEventListener('message', (event) => {
-      if (event.origin !== window.location.origin) return;
-      if (event.data.type === 'spotify-auth-success') {
-        spotifyAccessToken = event.data.access_token;
-        spotifyRefreshToken = event.data.refresh_token;
-        spotifyTokenExpiry = Date.now() + event.data.expires_in * 1000;
+    function handleSpotifyAuthResult(data) {
+      if (!data || !data.type) return;
+      if (data.type === 'spotify-auth-success') {
+        spotifyAccessToken = data.access_token;
+        spotifyRefreshToken = data.refresh_token;
+        spotifyTokenExpiry = Date.now() + data.expires_in * 1000;
         localStorage.setItem('spotify_access_token', spotifyAccessToken);
         localStorage.setItem('spotify_refresh_token', spotifyRefreshToken);
         localStorage.setItem('spotify_token_expiry', spotifyTokenExpiry.toString());
         initSpotifyPlayer();
         updateAuthUI(true);
-      } else if (event.data.type === 'spotify-auth-error') {
-        alert('Spotify login failed: ' + event.data.error);
+      } else if (data.type === 'spotify-auth-error') {
+        alert('Spotify login failed: ' + data.error);
       }
+    }
+
+    // Channel 1: postMessage from popup (Chrome/Firefox)
+    window.addEventListener('message', (event) => {
+      if (event.origin !== window.location.origin) return;
+      handleSpotifyAuthResult(event.data);
+    });
+
+    // Channel 2: storage event from popup (Brave / browsers that null window.opener)
+    window.addEventListener('storage', (event) => {
+      if (event.key !== 'spotify_auth_pending' || !event.newValue) return;
+      try {
+        const data = JSON.parse(event.newValue);
+        localStorage.removeItem('spotify_auth_pending');
+        handleSpotifyAuthResult(data);
+      } catch(e){}
     });
 
     async function refreshSpotifyToken() {
@@ -280,13 +316,13 @@
       return spotifyAccessToken;
     }
 
-    window.onSpotifyWebPlaybackSDKReady = () => {
-      if (spotifyAccessToken && Date.now() < spotifyTokenExpiry) {
-        initSpotifyPlayer();
-      }
-    };
-
     function initSpotifyPlayer() {
+      // Guard: wait for Spotify SDK to be loaded
+      if (typeof Spotify === 'undefined') {
+        pendingSDKInit = true;
+        return;
+      }
+      pendingSDKInit = false;
       if (spotifyPlayer) {
         spotifyPlayer.disconnect();
       }

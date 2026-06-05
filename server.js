@@ -4,9 +4,26 @@ const { Server } = require('socket.io');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const fs = require('fs');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
-app.set('trust proxy', true);
+app.set('trust proxy', 1);
+
+// ─── Security Headers ──────────────────────────────────────────────────────────
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' }
+}));
+
+// ─── Rate Limiting ─────────────────────────────────────────────────────────────
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 50,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many attempts, try again later' }
+});
 const server = http.createServer(app);
 const io = new Server(server);
 
@@ -14,7 +31,11 @@ const PORT = process.env.PORT || 3000;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
 const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
-const MASTER_PASSWORD = process.env.MASTER_PASSWORD || 'quiz123';
+const MASTER_PASSWORD = process.env.MASTER_PASSWORD;
+if (!MASTER_PASSWORD) {
+  console.error('FATAL: MASTER_PASSWORD environment variable is not set. Refusing to start.');
+  process.exit(1);
+}
 
 // Ensure data directory exists
 if (!fs.existsSync(DATA_DIR)) {
@@ -75,10 +96,33 @@ app.get('/auth/spotify', (req, res) => {
   res.redirect(`https://accounts.spotify.com/authorize?${params}`);
 });
 
+function authResultPage(payload, origin) {
+  const payloadJson = JSON.stringify(payload);
+  const originJson = JSON.stringify(origin);
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Spotify Auth</title>
+<style>body{font-family:system-ui,sans-serif;background:#121212;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center;padding:20px}</style>
+</head><body><div><h2>${payload.type === 'spotify-auth-success' ? 'Connected!' : 'Auth failed'}</h2><p id="msg">You can close this window.</p></div>
+<script>
+(function(){
+  var payload = ${payloadJson};
+  var targetOrigin = ${originJson};
+  // Channel 1: localStorage (works cross-window in Brave / strict browsers)
+  try { localStorage.setItem('spotify_auth_pending', JSON.stringify(Object.assign({ts: Date.now()}, payload))); } catch(e){}
+  // Channel 2: postMessage to opener (works in Chrome/Firefox)
+  try { if (window.opener && !window.opener.closed) { window.opener.postMessage(payload, targetOrigin); } } catch(e){}
+  // Try to close; if blocked, message stays visible
+  setTimeout(function(){ try { window.close(); } catch(e){} }, 150);
+  setTimeout(function(){ if (!window.closed) { document.getElementById('msg').textContent = 'Done. You can close this window.'; } }, 600);
+})();
+</script></body></html>`;
+}
+
 app.get('/auth/spotify/callback', async (req, res) => {
   const { code, error } = req.query;
+  const origin = `${req.protocol}://${req.get('host')}`;
+
   if (error) {
-    return res.send(`<script>window.opener.postMessage({type:'spotify-auth-error',error:'${error}'},'*');window.close();</script>`);
+    return res.send(authResultPage({ type: 'spotify-auth-error', error: String(error) }, origin));
   }
 
   const redirectUri = `${req.protocol}://${req.get('host')}/auth/spotify/callback`;
@@ -98,20 +142,16 @@ app.get('/auth/spotify/callback', async (req, res) => {
   });
 
   if (!tokenRes.ok) {
-    const text = await tokenRes.text();
-    return res.send(`<script>window.opener.postMessage({type:'spotify-auth-error',error:'Token exchange failed'},'*');window.close();</script>`);
+    return res.send(authResultPage({ type: 'spotify-auth-error', error: 'Token exchange failed' }, origin));
   }
 
   const data = await tokenRes.json();
-  res.send(`<script>
-    window.opener.postMessage({
-      type: 'spotify-auth-success',
-      access_token: '${data.access_token}',
-      refresh_token: '${data.refresh_token}',
-      expires_in: ${data.expires_in}
-    }, '*');
-    window.close();
-  </script>`);
+  res.send(authResultPage({
+    type: 'spotify-auth-success',
+    access_token: data.access_token,
+    refresh_token: data.refresh_token,
+    expires_in: data.expires_in
+  }, origin));
 });
 
 app.post('/auth/spotify/refresh', express.json(), async (req, res) => {
@@ -224,17 +264,29 @@ app.get('/quiz/:id', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'quiz.html'));
 });
 
+app.get('/quizmaster', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'quizmaster.html'));
+});
+
 app.get('/master/:id', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'master.html'));
 });
 
+// ─── Input Validation ──────────────────────────────────────────────────────────
+
+function isValidQuizId(id) {
+  return typeof id === 'string' && /^[a-f0-9]{8}$/.test(id);
+}
+
 // ─── Master API (password-protected) ──────────────────────────────────────────
 
-app.post('/api/auth', express.json(), (req, res) => {
+app.post('/api/auth', authLimiter, express.json(), (req, res) => {
   const { password } = req.body;
   if (password === MASTER_PASSWORD) {
     res.json({ success: true });
   } else {
+    const ip = req.ip || req.socket.remoteAddress;
+    console.warn(`[AUTH] Failed attempt from ${ip} at ${new Date().toISOString()}`);
     res.status(401).json({ error: 'Wrong password' });
   }
 });
@@ -261,6 +313,9 @@ app.post('/api/quiz/:id', express.json(), (req, res) => {
   const { password } = req.body;
   if (password !== MASTER_PASSWORD) {
     return res.status(401).json({ error: 'Unauthorized' });
+  }
+  if (!isValidQuizId(req.params.id)) {
+    return res.status(400).json({ error: 'Invalid quiz ID' });
   }
   const quiz = quizzes[req.params.id];
   if (!quiz) return res.status(404).json({ error: 'Quiz not found' });
@@ -305,6 +360,9 @@ app.delete('/api/quiz/:id', express.json(), (req, res) => {
   if (password !== MASTER_PASSWORD) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
+  if (!isValidQuizId(req.params.id)) {
+    return res.status(400).json({ error: 'Invalid quiz ID' });
+  }
   const quiz = quizzes[req.params.id];
   if (!quiz) return res.status(404).json({ error: 'Quiz not found' });
 
@@ -320,7 +378,8 @@ io.on('connection', (socket) => {
   console.log(`Socket connected: ${socket.id}`);
 
   // ─── Create Quiz ───────────────────────────────────────────────────────────
-  socket.on('create-quiz', ({ quizName, songsPerPerson }, callback) => {
+  socket.on('create-quiz', ({ quizName, songsPerPerson, password }, callback) => {
+    if (password !== MASTER_PASSWORD) return callback({ error: 'Unauthorized' });
     const quizId = uuidv4().slice(0, 8);
     const quiz = {
       id: quizId,
@@ -344,7 +403,8 @@ io.on('connection', (socket) => {
   });
 
   // ─── Rejoin as Master ──────────────────────────────────────────────────────
-  socket.on('rejoin-master', ({ quizId }, callback) => {
+  socket.on('rejoin-master', ({ quizId, password }, callback) => {
+    if (password !== MASTER_PASSWORD) return callback({ error: 'Unauthorized' });
     const quiz = quizzes[quizId];
     if (!quiz) return callback({ error: 'Quiz not found' });
     quiz.masterId = socket.id;
@@ -381,7 +441,13 @@ io.on('connection', (socket) => {
       socket.quizId = quizId;
       socket.username = trimmed;
       saveQuiz(quiz);
-      callback({ quiz: sanitizeQuizForContestant(quiz) });
+      // Include user-specific state so client can fully restore
+      const myVote = quiz.votes[quiz.currentIndex]?.[trimmed] || null;
+      const myScores = quiz.state === 'finished' ? calculateScores(quiz) : null;
+      const allSongs = quiz.state === 'finished'
+        ? quiz.queue.map(s => ({ title: s.title, artist: s.artist, albumArt: s.albumArt, trackId: s.trackId, addedBy: s.addedBy }))
+        : null;
+      callback({ quiz: sanitizeQuizForContestant(quiz), mySongs: contestantData.songs, myVote, scores: myScores, songs: allSongs });
       return;
     }
 
@@ -399,11 +465,15 @@ io.on('connection', (socket) => {
     socket.username = trimmed;
     saveQuiz(quiz);
 
-    callback({ quiz: sanitizeQuizForContestant(quiz) });
-    io.to(`quiz-${quizId}`).emit('contestant-joined', {
-      username: trimmed,
-      contestants: Object.values(quiz.contestants).map(c => c.username)
-    });
+    const contestant = quiz.contestants[socket.id];
+    callback({ quiz: sanitizeQuizForContestant(quiz), mySongs: contestant.songs });
+    // Only broadcast join event for new contestants, not rejoins
+    if (!existingEntry) {
+      io.to(`quiz-${quizId}`).emit('contestant-joined', {
+        username: trimmed,
+        contestants: Object.values(quiz.contestants).map(c => c.username)
+      });
+    }
     console.log(`${trimmed} joined quiz ${quizId}`);
   });
 
@@ -454,6 +524,10 @@ io.on('connection', (socket) => {
 
     const contestant = quiz.contestants[socket.id];
     if (!contestant) return callback({ error: 'Not a contestant' });
+
+    if (typeof index !== 'number' || !Number.isInteger(index) || index < 0 || index >= contestant.songs.length) {
+      return callback({ error: 'Invalid song index' });
+    }
 
     contestant.songs.splice(index, 1);
     saveQuiz(quiz);
@@ -625,6 +699,10 @@ io.on('connection', (socket) => {
     const contestant = quiz.contestants[socket.id];
     if (!contestant) return callback({ error: 'Not a contestant' });
 
+    const validTargets = Object.values(quiz.contestants).map(c => c.username);
+    if (!validTargets.includes(votedFor)) {
+      return callback({ error: 'Invalid vote target' });
+    }
     const idx = quiz.currentIndex;
     if (!quiz.votes[idx]) quiz.votes[idx] = {};
     quiz.votes[idx][contestant.username] = votedFor;
@@ -710,7 +788,7 @@ function calculateScores(quiz) {
 // ─── Start Server ──────────────────────────────────────────────────────────────
 
 server.listen(PORT, () => {
-  console.log(`MusikQuiz server running on http://localhost:${PORT}`);
+  console.log(`OnlyMIP MusicQuiz server running on http://localhost:${PORT}`);
   if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) {
     console.warn('WARNING: SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET not set. Search will not work.');
     console.warn('Get credentials at: https://developer.spotify.com/dashboard');

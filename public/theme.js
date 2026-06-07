@@ -1,6 +1,20 @@
 (function () {
   var THEME_KEY = 'musikquiz-theme';
 
+  // Brand name per theme (used as prefix)
+  var BRAND_PREFIX = {
+    dark: 'OnlyMIP',
+    ua:   'SLAVA MIP',
+    tpb:  'The MIP Bay',
+    ph:   'MIPHUB'
+  };
+
+  // Suffix per page variant
+  var BRAND_SUFFIX = {
+    default: 'MusicQuiz',
+    master:  'Quiz Master Panel'
+  };
+
   function getSaved() {
     try { return localStorage.getItem(THEME_KEY) || 'dark'; } catch (e) { return 'dark'; }
   }
@@ -13,6 +27,14 @@
     var logoSrc = logos[theme] || '/logo.svg';
     document.querySelectorAll('.logo-img').forEach(function (img) {
       img.src = logoSrc;
+    });
+
+    // Update brand text on all .brand-text spans
+    var prefix = BRAND_PREFIX[theme] || BRAND_PREFIX.dark;
+    document.querySelectorAll('.brand-text').forEach(function (el) {
+      var variant = el.getAttribute('data-brand-variant') || 'default';
+      var suffix = BRAND_SUFFIX[variant] || BRAND_SUFFIX.default;
+      el.textContent = prefix + ' ' + suffix;
     });
 
     // Sync dropdown value

@@ -11,7 +11,7 @@
 <body>
   <div class="container">
     <div class="page-header">
-      <h1><a href="/" class="title-link"><img src="/logo.svg" class="logo-img">OnlyMIP MusicQuiz</a></h1>
+      <h1><a href="/" class="title-link"><img src="/logo.svg" class="logo-img"><span class="brand-text">OnlyMIP MusicQuiz</span></a></h1>
       <nav class="header-nav">
         <a href="/quizmaster" class="nav-link">Quiz Master</a>
         <select id="theme-select" class="nav-link theme-select">
@@ -232,7 +232,7 @@
 
       socket.emit('search-spotify', { query }, (response) => {
         if (response.error) {
-          document.getElementById('search-results').innerHTML = `<p class="error">${response.error}</p>`;
+          document.getElementById('search-results').innerHTML = `<p class="error">${escapeHtml(response.error)}</p>`;
           return;
         }
 
@@ -241,7 +241,7 @@
           return;
         }
 
-        const html = response.tracks.map(t => `
+        const html = response.tracks.map((t, i) => `
           <div class="search-result">
             <img src="${escapeHtml(t.albumArt)}" alt="" class="result-thumb">
             <div class="result-info">
@@ -249,10 +249,20 @@
               <div class="result-artist">${escapeHtml(t.artist)}</div>
               <div class="result-duration">${escapeHtml(t.duration)}</div>
             </div>
-            <button class="btn btn-small btn-add" onclick='addSong(${JSON.stringify(t).replace(/'/g, "&#39;")})'>Add</button>
+            <button class="btn btn-small btn-add" data-track-index="${i}">Add</button>
           </div>
         `).join('');
-        document.getElementById('search-results').innerHTML = html;
+        const resultsContainer = document.getElementById('search-results');
+        resultsContainer.innerHTML = html;
+        // Stash tracks on the container; wire add buttons via delegation
+        resultsContainer._tracks = response.tracks;
+        resultsContainer.querySelectorAll('button[data-track-index]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const idx = parseInt(btn.dataset.trackIndex, 10);
+            const track = resultsContainer._tracks[idx];
+            if (track) addSong(track);
+          });
+        });
       });
     }
 
@@ -410,9 +420,14 @@
     function renderVoteButtons() {
       const html = contestants
         .filter(name => name !== myUsername)
-        .map(name => `<button class="btn btn-vote" onclick="vote('${escapeHtml(name)}')" ${hasVoted ? 'disabled' : ''}>${escapeHtml(name)}</button>`)
+        .map(name => `<button class="btn btn-vote" data-vote-name="${escapeHtml(name)}" ${hasVoted ? 'disabled' : ''}>${escapeHtml(name)}</button>`)
         .join('');
-      document.getElementById('vote-buttons').innerHTML = html;
+      const container = document.getElementById('vote-buttons');
+      container.innerHTML = html;
+      // Attach handlers via delegation (avoids inline onclick + attribute injection)
+      container.querySelectorAll('button[data-vote-name]').forEach(btn => {
+        btn.addEventListener('click', () => vote(btn.dataset.voteName));
+      });
     }
 
     function vote(votedFor) {

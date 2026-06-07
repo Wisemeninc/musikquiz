@@ -4,6 +4,7 @@ const { Server } = require('socket.io');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 
@@ -11,9 +12,14 @@ const app = express();
 app.set('trust proxy', 1);
 
 // ─── Security Headers ──────────────────────────────────────────────────────────
+// NOTE: Spotify Web Playback SDK uses EME/Widevine which is sensitive to
+// Cross-Origin-Resource-Policy and Origin-Agent-Cluster headers. Disable those.
 app.use(helmet({
   contentSecurityPolicy: false,
-  crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' }
+  crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+  crossOriginResourcePolicy: false,
+  crossOriginEmbedderPolicy: false,
+  originAgentCluster: false
 }));
 
 // ─── Rate Limiting ─────────────────────────────────────────────────────────────
@@ -35,6 +41,15 @@ const MASTER_PASSWORD = process.env.MASTER_PASSWORD;
 if (!MASTER_PASSWORD) {
   console.error('FATAL: MASTER_PASSWORD environment variable is not set. Refusing to start.');
   process.exit(1);
+}
+
+// Constant-time password compare to prevent timing-based brute force
+const MASTER_PASSWORD_BUF = Buffer.from(MASTER_PASSWORD, 'utf8');
+function checkPassword(supplied) {
+  if (typeof supplied !== 'string') return false;
+  const buf = Buffer.from(supplied, 'utf8');
+  if (buf.length !== MASTER_PASSWORD_BUF.length) return false;
+  return crypto.timingSafeEqual(buf, MASTER_PASSWORD_BUF);
 }
 
 // Ensure data directory exists
@@ -82,9 +97,33 @@ async function getSpotifyToken() {
 
 const SPOTIFY_SCOPES = 'streaming user-read-email user-read-private user-modify-playback-state user-read-playback-state';
 
+// In-memory state store for OAuth CSRF protection (state → expiry)
+const oauthStates = new Map();
+const OAUTH_STATE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+function rememberOAuthState(state) {
+  oauthStates.set(state, Date.now() + OAUTH_STATE_TTL_MS);
+  // Opportunistic cleanup of expired states
+  if (oauthStates.size > 100) {
+    const now = Date.now();
+    for (const [s, expiry] of oauthStates) {
+      if (expiry < now) oauthStates.delete(s);
+    }
+  }
+}
+
+function consumeOAuthState(state) {
+  if (typeof state !== 'string' || !state) return false;
+  const expiry = oauthStates.get(state);
+  if (!expiry) return false;
+  oauthStates.delete(state);  // one-time use
+  return Date.now() < expiry;
+}
+
 app.get('/auth/spotify', (req, res) => {
   const redirectUri = `${req.protocol}://${req.get('host')}/auth/spotify/callback`;
-  const state = uuidv4().slice(0, 16);
+  const state = crypto.randomBytes(16).toString('hex');
+  rememberOAuthState(state);
   const params = new URLSearchParams({
     response_type: 'code',
     client_id: SPOTIFY_CLIENT_ID,
@@ -118,11 +157,16 @@ function authResultPage(payload, origin) {
 }
 
 app.get('/auth/spotify/callback', async (req, res) => {
-  const { code, error } = req.query;
+  const { code, error, state } = req.query;
   const origin = `${req.protocol}://${req.get('host')}`;
 
   if (error) {
     return res.send(authResultPage({ type: 'spotify-auth-error', error: String(error) }, origin));
+  }
+
+  // CSRF protection: state must match one we issued and is not expired/reused
+  if (!consumeOAuthState(state)) {
+    return res.send(authResultPage({ type: 'spotify-auth-error', error: 'Invalid or expired state (possible CSRF attempt)' }, origin));
   }
 
   const redirectUri = `${req.protocol}://${req.get('host')}/auth/spotify/callback`;
@@ -282,7 +326,7 @@ function isValidQuizId(id) {
 
 app.post('/api/auth', authLimiter, express.json(), (req, res) => {
   const { password } = req.body;
-  if (password === MASTER_PASSWORD) {
+  if (checkPassword(password)) {
     res.json({ success: true });
   } else {
     const ip = req.ip || req.socket.remoteAddress;
@@ -293,7 +337,7 @@ app.post('/api/auth', authLimiter, express.json(), (req, res) => {
 
 app.post('/api/quizzes', express.json(), (req, res) => {
   const { password } = req.body;
-  if (password !== MASTER_PASSWORD) {
+  if (!checkPassword(password)) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   const list = Object.values(quizzes)
@@ -311,7 +355,7 @@ app.post('/api/quizzes', express.json(), (req, res) => {
 
 app.post('/api/quiz/:id', express.json(), (req, res) => {
   const { password } = req.body;
-  if (password !== MASTER_PASSWORD) {
+  if (!checkPassword(password)) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   if (!isValidQuizId(req.params.id)) {
@@ -357,7 +401,7 @@ app.post('/api/quiz/:id', express.json(), (req, res) => {
 
 app.delete('/api/quiz/:id', express.json(), (req, res) => {
   const { password } = req.body;
-  if (password !== MASTER_PASSWORD) {
+  if (!checkPassword(password)) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   if (!isValidQuizId(req.params.id)) {
@@ -379,7 +423,7 @@ io.on('connection', (socket) => {
 
   // ─── Create Quiz ───────────────────────────────────────────────────────────
   socket.on('create-quiz', ({ quizName, songsPerPerson, password }, callback) => {
-    if (password !== MASTER_PASSWORD) return callback({ error: 'Unauthorized' });
+    if (!checkPassword(password)) return callback({ error: 'Unauthorized' });
     const quizId = uuidv4().slice(0, 8);
     const quiz = {
       id: quizId,
@@ -404,7 +448,7 @@ io.on('connection', (socket) => {
 
   // ─── Rejoin as Master ──────────────────────────────────────────────────────
   socket.on('rejoin-master', ({ quizId, password }, callback) => {
-    if (password !== MASTER_PASSWORD) return callback({ error: 'Unauthorized' });
+    if (!checkPassword(password)) return callback({ error: 'Unauthorized' });
     const quiz = quizzes[quizId];
     if (!quiz) return callback({ error: 'Quiz not found' });
     quiz.masterId = socket.id;

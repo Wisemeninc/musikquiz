@@ -1,23 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1536 512" width="100%" height="100%">
   <!-- OnlyFans signature cyan-blue background -->
-  <rect x="0" y="0" width="512" height="512" rx="96" fill="#00AFF0"/>
+  <rect x="0" y="0" width="1536" height="512" rx="64" fill="#00AFF0"/>
 
-  <!-- White circle ring (iconic O / lock shape) -->
-  <circle cx="256" cy="200" r="115" fill="none" stroke="#ffffff" stroke-width="26"/>
-
-  <!-- Music note inside the ring (replacing the lock) -->
-  <g transform="translate(256, 200)">
-    <!-- Note stem -->
-    <rect x="20" y="-60" width="10" height="78" fill="#ffffff"/>
-    <!-- Note flag -->
-    <path d="M 30 -60 Q 70 -50, 70 -10 Q 60 -30, 30 -32 Z" fill="#ffffff"/>
-    <!-- Note head -->
-    <ellipse cx="0" cy="22" rx="26" ry="18" fill="#ffffff" transform="rotate(-20)"/>
+  <!-- White circle ring with music note icon (left side) -->
+  <g transform="translate(256, 256)">
+    <circle cx="0" cy="0" r="160" fill="none" stroke="#ffffff" stroke-width="32"/>
+    <!-- Music note inside -->
+    <rect x="28" y="-84" width="14" height="110" fill="#ffffff"/>
+    <path d="M 42 -84 Q 98 -70, 98 -14 Q 84 -42, 42 -44 Z" fill="#ffffff"/>
+    <ellipse cx="0" cy="30" rx="36" ry="25" fill="#ffffff" transform="rotate(-20)"/>
   </g>
 
-  <!-- OnlyMIP wordmark - matching OnlyFans typography style -->
-  <text x="256" y="430" font-family="system-ui, -apple-system, 'Helvetica Neue', sans-serif"
-        font-weight="700" font-size="76" fill="#ffffff" text-anchor="middle" letter-spacing="-2">
+  <!-- OnlyMIP wordmark, large and to the right -->
+  <text x="496" y="320" font-family="system-ui, -apple-system, 'Helvetica Neue', sans-serif"
+        font-weight="700" font-size="220" fill="#ffffff" letter-spacing="-4">
     Only<tspan font-weight="900">MIP</tspan>
   </text>
 </svg>

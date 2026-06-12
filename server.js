@@ -613,19 +613,24 @@ io.on('connection', (socket) => {
     saveQuiz(quiz);
 
     callback({ success: true });
+    const firstSong = quiz.queue[0];
+    const eligibleVoterCount = Object.values(quiz.contestants)
+      .filter(c => c.username !== firstSong.addedBy).length;
     // Send full song info to master only
     io.to(quiz.masterId).emit('quiz-started', {
       totalSongs: quiz.queue.length,
       currentIndex: 0,
-      currentSong: sanitizeSong(quiz.queue[0]),
-      contestants: Object.values(quiz.contestants).map(c => c.username)
+      currentSong: sanitizeSong(firstSong),
+      contestants: Object.values(quiz.contestants).map(c => c.username),
+      eligibleVoterCount
     });
     // Send stripped song info to contestants
     socket.to(`quiz-${quizId}`).emit('quiz-started', {
       totalSongs: quiz.queue.length,
       currentIndex: 0,
-      currentSong: sanitizeSongForContestant(quiz.queue[0]),
-      contestants: Object.values(quiz.contestants).map(c => c.username)
+      currentSong: sanitizeSongForContestant(firstSong),
+      contestants: Object.values(quiz.contestants).map(c => c.username),
+      eligibleVoterCount
     });
     console.log(`Quiz ${quizId} started with ${allSongs.length} songs`);
   });
@@ -640,17 +645,21 @@ io.on('connection', (socket) => {
     quiz.currentIndex--;
     saveQuiz(quiz);
     const song = quiz.queue[quiz.currentIndex];
+    const eligibleVoterCount = Object.values(quiz.contestants)
+      .filter(c => c.username !== song.addedBy).length;
     // Full info to master
     io.to(quiz.masterId).emit('prev-song', {
       currentIndex: quiz.currentIndex,
       currentSong: sanitizeSong(song),
-      totalSongs: quiz.queue.length
+      totalSongs: quiz.queue.length,
+      eligibleVoterCount
     });
     // Stripped info to contestants
     socket.to(`quiz-${quizId}`).emit('prev-song', {
       currentIndex: quiz.currentIndex,
       currentSong: sanitizeSongForContestant(song),
-      totalSongs: quiz.queue.length
+      totalSongs: quiz.queue.length,
+      eligibleVoterCount
     });
     callback({ currentIndex: quiz.currentIndex });
   });
@@ -680,19 +689,23 @@ io.on('connection', (socket) => {
       saveQuiz(quiz);
       const song = quiz.queue[quiz.currentIndex];
       const prevSong = quiz.queue[quiz.currentIndex - 1];
+      const eligibleVoterCount = Object.values(quiz.contestants)
+        .filter(c => c.username !== song.addedBy).length;
       // Full info to master (include previous song for history)
       io.to(quiz.masterId).emit('next-song', {
         currentIndex: quiz.currentIndex,
         currentSong: sanitizeSong(song),
         totalSongs: quiz.queue.length,
-        previousSong: prevSong ? { title: prevSong.title, artist: prevSong.artist, albumArt: prevSong.albumArt, trackId: prevSong.trackId, addedBy: prevSong.addedBy } : null
+        previousSong: prevSong ? { title: prevSong.title, artist: prevSong.artist, albumArt: prevSong.albumArt, trackId: prevSong.trackId, addedBy: prevSong.addedBy } : null,
+        eligibleVoterCount
       });
       // Stripped info to contestants
       socket.to(`quiz-${quizId}`).emit('next-song', {
         currentIndex: quiz.currentIndex,
         currentSong: sanitizeSongForContestant(song),
         totalSongs: quiz.queue.length,
-        previousSong: prevSong ? { title: prevSong.title, artist: prevSong.artist, albumArt: prevSong.albumArt, trackId: prevSong.trackId, addedBy: prevSong.addedBy } : null
+        previousSong: prevSong ? { title: prevSong.title, artist: prevSong.artist, albumArt: prevSong.albumArt, trackId: prevSong.trackId, addedBy: prevSong.addedBy } : null,
+        eligibleVoterCount
       });
       callback({ finished: false, currentIndex: quiz.currentIndex });
     }
@@ -743,6 +756,11 @@ io.on('connection', (socket) => {
     const contestant = quiz.contestants[socket.id];
     if (!contestant) return callback({ error: 'Not a contestant' });
 
+    const currentSong = quiz.queue[quiz.currentIndex];
+    if (currentSong.addedBy === contestant.username) {
+      return callback({ error: 'You cannot vote on your own song' });
+    }
+
     const validTargets = Object.values(quiz.contestants).map(c => c.username);
     if (!validTargets.includes(votedFor)) {
       return callback({ error: 'Invalid vote target' });
@@ -754,12 +772,38 @@ io.on('connection', (socket) => {
 
     callback({ success: true });
 
-    const voteCount = Object.keys(quiz.votes[idx]).length;
-    const totalContestants = Object.keys(quiz.contestants).length;
+    const eligibleVoters = Object.values(quiz.contestants)
+      .filter(c => c.username !== currentSong.addedBy);
+    const currentVotes = quiz.votes[idx];
+    const voteCount = Object.keys(currentVotes).length;
+
     io.to(`quiz-${quizId}`).emit('vote-update', {
       voteCount,
-      totalContestants
+      totalContestants: eligibleVoters.length
     });
+
+    const allVoted = eligibleVoters.length > 0 &&
+      eligibleVoters.every(c => currentVotes[c.username] !== undefined);
+
+    if (allVoted) {
+      if (!quiz.revealedIndices) quiz.revealedIndices = [];
+      if (!quiz.revealedIndices.includes(idx)) {
+        quiz.revealedIndices.push(idx);
+        saveQuiz(quiz);
+      }
+      const results = {};
+      for (const [voter, voted] of Object.entries(currentVotes)) {
+        results[voter] = { votedFor: voted, correct: voted === currentSong.addedBy };
+      }
+      io.to(`quiz-${quizId}`).emit('answer-revealed', {
+        addedBy: currentSong.addedBy,
+        title: currentSong.title,
+        artist: currentSong.artist,
+        trackId: currentSong.trackId,
+        albumArt: currentSong.albumArt,
+        votes: results
+      });
+    }
   });
 
   // ─── Get Quiz State ────────────────────────────────────────────────────────

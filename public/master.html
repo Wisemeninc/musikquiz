@@ -483,14 +483,17 @@
       updateContestantsList(contestants);
     });
 
-    socket.on('quiz-started', ({ totalSongs, currentIndex, currentSong, contestants }) => {
-      document.getElementById('total-contestants').textContent = contestants.length;
+    socket.on('quiz-started', ({ totalSongs, currentIndex, currentSong, contestants, eligibleVoterCount }) => {
+      document.getElementById('total-contestants').textContent = eligibleVoterCount !== undefined ? eligibleVoterCount : contestants.length;
       showPlayingViewFromEvent(totalSongs, currentIndex, currentSong);
     });
 
-    socket.on('next-song', ({ currentIndex, currentSong, totalSongs, previousSong }) => {
+    socket.on('next-song', ({ currentIndex, currentSong, totalSongs, previousSong, eligibleVoterCount }) => {
       document.getElementById('answer-card').style.display = 'none';
       document.getElementById('vote-count').textContent = '0';
+      if (eligibleVoterCount !== undefined) {
+        document.getElementById('total-contestants').textContent = eligibleVoterCount;
+      }
       if (previousSong && !masterRevealedSongs.some(s => s.trackId === previousSong.trackId)) {
         masterRevealedSongs.push(previousSong);
         renderMasterPreviousSongs();
@@ -498,9 +501,12 @@
       playSong(currentSong, currentIndex, totalSongs);
     });
 
-    socket.on('prev-song', ({ currentIndex, currentSong, totalSongs }) => {
+    socket.on('prev-song', ({ currentIndex, currentSong, totalSongs, eligibleVoterCount }) => {
       document.getElementById('answer-card').style.display = 'none';
       document.getElementById('vote-count').textContent = '0';
+      if (eligibleVoterCount !== undefined) {
+        document.getElementById('total-contestants').textContent = eligibleVoterCount;
+      }
       playSong(currentSong, currentIndex, totalSongs);
     });
 
@@ -601,7 +607,11 @@
     function showPlayingView(quiz) {
       document.getElementById('lobby-view').style.display = 'none';
       document.getElementById('playing-view').style.display = 'block';
-      document.getElementById('total-contestants').textContent = Object.keys(quiz.contestants).length;
+      const currentSong = quiz.queue && quiz.queue[quiz.currentIndex];
+      const eligibleCount = currentSong
+        ? Object.values(quiz.contestants).filter(c => c.username !== currentSong.addedBy).length
+        : Object.keys(quiz.contestants).length;
+      document.getElementById('total-contestants').textContent = eligibleCount;
       // Restore all songs before current index
       if (quiz.queue && quiz.currentIndex > 0) {
         for (let i = 0; i < quiz.currentIndex; i++) {

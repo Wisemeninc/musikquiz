@@ -75,7 +75,7 @@
         <p class="hint">Listen to the song playing in the room...</p>
       </div>
 
-      <div class="card">
+      <div class="card" id="vote-card">
         <h2>Who picked this song?</h2>
         <div id="vote-buttons"></div>
         <p id="vote-status" class="hint"></p>
@@ -126,6 +126,7 @@
     let mySongs = [];
     let hasVoted = false;
     let revealedSongs = [];
+    let currentSongTrackId = null;
 
     function escapeHtml(str) {
       return String(str)
@@ -413,18 +414,21 @@
     }
 
     function playSong(song, index, total) {
+      currentSongTrackId = song.trackId;
       document.getElementById('song-number').textContent = index + 1;
       document.getElementById('total-songs').textContent = total;
     }
 
     function renderVoteButtons() {
+      const isMyOwnSong = currentSongTrackId && mySongs.some(s => s.trackId === currentSongTrackId);
+      document.getElementById('vote-card').style.display = isMyOwnSong ? 'none' : '';
+      if (isMyOwnSong) return;
+      const container = document.getElementById('vote-buttons');
       const html = contestants
         .filter(name => name !== myUsername)
         .map(name => `<button class="btn btn-vote" data-vote-name="${escapeHtml(name)}" ${hasVoted ? 'disabled' : ''}>${escapeHtml(name)}</button>`)
         .join('');
-      const container = document.getElementById('vote-buttons');
       container.innerHTML = html;
-      // Attach handlers via delegation (avoids inline onclick + attribute injection)
       container.querySelectorAll('button[data-vote-name]').forEach(btn => {
         btn.addEventListener('click', () => vote(btn.dataset.voteName));
       });

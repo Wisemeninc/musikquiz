@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">
+  <defs>
+    <linearGradient id="sun" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffd36b"/>
+      <stop offset="0.5" stop-color="#ff9000"/>
+      <stop offset="1" stop-color="#ff5e00"/>
+    </linearGradient>
+    <mask id="slits"><rect width="400" height="400" fill="white"/><rect x="0" y="212" width="400" height="8" fill="black"/><rect x="0" y="234" width="400" height="11" fill="black"/><rect x="0" y="260" width="400" height="15" fill="black"/><rect x="0" y="292" width="400" height="20" fill="black"/><rect x="0" y="332" width="400" height="28" fill="black"/></mask>
+  </defs>
+  <circle cx="200" cy="200" r="150" fill="url(#sun)" mask="url(#slits)"/>
+</svg>

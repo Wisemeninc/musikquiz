@@ -84,3 +84,56 @@ function spawnConfetti() {
     setTimeout(() => el.remove(), 4500);
   }
 }
+
+// ─── Spotify playlist export (shared by master + quizmaster) ────────────────
+// getToken() -> Promise<string>. Throws Error('empty'|'scope'|'me'|'create'|'add').
+async function spotifyExportPlaylist({ name, trackIds, getToken }) {
+  const ids = [...new Set((trackIds || []).filter(t => /^[A-Za-z0-9]{22}$/.test(t || '')))];
+  if (ids.length === 0) throw new Error('empty');
+
+  const token = await getToken();
+  const authJson = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+
+  const meRes = await fetch('https://api.spotify.com/v1/me', {
+    headers: { 'Authorization': 'Bearer ' + token }
+  });
+  if (meRes.status === 403) throw new Error('scope');
+  if (!meRes.ok) throw new Error('me');
+  const me = await meRes.json();
+
+  const plRes = await fetch('https://api.spotify.com/v1/users/' + encodeURIComponent(me.id) + '/playlists', {
+    method: 'POST',
+    headers: authJson,
+    body: JSON.stringify({ name, description: 'Created with OnlyMIP MusicQuiz', public: false })
+  });
+  if (plRes.status === 403) throw new Error('scope');
+  if (!plRes.ok) throw new Error('create');
+  const pl = await plRes.json();
+
+  for (let i = 0; i < ids.length; i += 100) {
+    const uris = ids.slice(i, i + 100).map(id => 'spotify:track:' + id);
+    const addRes = await fetch('https://api.spotify.com/v1/playlists/' + pl.id + '/tracks', {
+      method: 'POST', headers: authJson, body: JSON.stringify({ uris })
+    });
+    if (!addRes.ok) throw new Error('add');
+  }
+
+  return {
+    url: (pl.external_urls && pl.external_urls.spotify) || ('https://open.spotify.com/playlist/' + pl.id),
+    count: ids.length
+  };
+}
+
+// ─── Emoji reactions (float up the screen; used by phone + TV) ──────────────
+const REACTION_EMOJIS = ['\u{1F525}', '\u{1F602}', '\u{1F631}', '\u{1F44F}', '❤️', '\u{1F389}'];
+
+function spawnReaction(emoji) {
+  const el = document.createElement('div');
+  el.className = 'reaction-float';
+  el.textContent = emoji;
+  el.style.left = (8 + Math.random() * 84) + 'vw';
+  el.style.fontSize = (1.8 + Math.random() * 1.4) + 'rem';
+  el.style.setProperty('--drift', ((Math.random() * 60) - 30) + 'px');
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 3200);
+}

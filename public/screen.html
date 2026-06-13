@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OnlyMIP MusicQuiz - TV</title>
+  <link rel="icon" type="image/svg+xml" href="/logo.svg">
+  <link rel="stylesheet" href="/style.css?v=8">
+  <script src="/theme.js?v=3"></script>
+  <style>
+    .screen-body { padding: 0; overflow-x: hidden; }
+    .screen-section {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2.4vh;
+      padding: 4vh 4vw;
+      text-align: center;
+    }
+    .s-title {
+      font-size: clamp(2rem, 5.5vw, 5rem);
+      font-weight: 800;
+      color: var(--accent);
+      margin: 0;
+    }
+    /* Lobby join block */
+    .s-join {
+      display: flex;
+      align-items: center;
+      gap: 4vw;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .s-qr {
+      width: clamp(180px, 22vw, 340px);
+      height: clamp(180px, 22vw, 340px);
+      border-radius: 18px;
+      background: #fff;
+      padding: 12px;
+    }
+    .s-join-label { font-size: clamp(1rem, 2vw, 1.6rem); color: var(--text-muted); }
+    .s-join-url {
+      font-size: clamp(1.4rem, 3.4vw, 3rem);
+      font-weight: 700;
+      color: var(--text-primary);
+      word-break: break-all;
+    }
+    .s-join-hint { font-size: clamp(0.9rem, 1.6vw, 1.3rem); color: var(--text-dim); margin-top: 0.6vh; }
+    .s-players-h { font-size: clamp(1.1rem, 2.4vw, 2rem); color: var(--text-muted); margin: 0; }
+    .s-players {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1vw 1.4vw;
+      justify-content: center;
+      max-width: 90vw;
+    }
+    .s-player {
+      display: flex;
+      align-items: center;
+      gap: 0.7vw;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 1000px;
+      padding: 0.9vh 1.6vw;
+      font-size: clamp(1rem, 2vw, 1.7rem);
+      font-weight: 600;
+    }
+    .s-player-badge {
+      background: rgba(var(--accent-rgb), 0.18);
+      color: var(--accent);
+      border-radius: 1000px;
+      padding: 0.2vh 0.9vw;
+      font-size: 0.8em;
+    }
+    .s-waiting { color: var(--text-dim); font-size: clamp(1rem, 2vw, 1.6rem); }
+
+    /* Playing */
+    .s-songcount { font-size: clamp(1.2rem, 3vw, 2.6rem); font-weight: 700; color: var(--text-muted); }
+    .s-record {
+      width: clamp(220px, 30vw, 460px);
+      height: clamp(220px, 30vw, 460px);
+      border-radius: 50%;
+      background:
+        radial-gradient(circle at center, var(--card-bg) 0 14%, #111 14% 16%, var(--card-bg) 16% 30%, #0c0c0c 30% 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 60px rgba(var(--accent-rgb), 0.25);
+      animation: s-spin 4s linear infinite;
+    }
+    .s-record-q {
+      font-size: clamp(4rem, 12vw, 11rem);
+      font-weight: 900;
+      color: var(--accent);
+    }
+    @keyframes s-spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { .s-record { animation: none; } }
+    .s-art {
+      width: clamp(220px, 30vw, 460px);
+      height: clamp(220px, 30vw, 460px);
+      border-radius: 22px;
+      object-fit: cover;
+      box-shadow: 0 0 70px rgba(var(--accent-rgb), 0.4);
+      animation: s-pop 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    @keyframes s-pop { from { transform: scale(0.7); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+    .s-song-title { font-size: clamp(1.6rem, 4.5vw, 4rem); font-weight: 800; color: var(--text-primary); }
+    .s-song-artist { font-size: clamp(1.1rem, 2.6vw, 2.2rem); color: var(--text-muted); }
+    .s-addedby { font-size: clamp(1.3rem, 3.4vw, 3rem); margin-top: 1.2vh; color: var(--text-primary); }
+    .s-addedby span { color: var(--accent); font-weight: 800; }
+    .s-votetally { font-size: clamp(1.2rem, 3vw, 2.4rem); font-weight: 700; color: var(--text-muted); }
+    .s-countdown { width: min(620px, 80vw); }
+    .s-votechart { width: min(680px, 84vw); }
+    .vote-chart-name { flex-basis: 26%; font-size: clamp(0.9rem, 1.8vw, 1.4rem); }
+    .vote-chart-track { height: clamp(16px, 2.4vh, 26px); }
+
+    /* Finished */
+    .s-scoreboard { width: min(760px, 88vw); display: flex; flex-direction: column; gap: 1.2vh; }
+    .s-score-row {
+      display: flex;
+      align-items: center;
+      gap: 2vw;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1.4vh 2vw;
+      font-size: clamp(1.2rem, 3vw, 2.4rem);
+    }
+    .s-score-row.winner { border-color: var(--accent); box-shadow: 0 0 36px rgba(var(--accent-rgb), 0.3); }
+    .s-rank { font-weight: 800; min-width: 4.5em; text-align: left; }
+    .s-score-name { flex: 1; text-align: left; font-weight: 700; }
+    .s-score-val { color: var(--accent); font-weight: 800; }
+    .s-awards-list { width: min(760px, 88vw); }
+    .award-row { font-size: clamp(1rem, 2.2vw, 1.8rem); }
+  </style>
+</head>
+<body class="screen-body">
+  <!-- Lobby -->
+  <section id="s-lobby" class="screen-section">
+    <h1 id="s-title" class="s-title">Music Quiz</h1>
+    <div class="s-join">
+      <img id="s-qr" class="s-qr" alt="Scan to join">
+      <div class="s-join-info">
+        <div class="s-join-label">Join at</div>
+        <div id="s-join-url" class="s-join-url"></div>
+        <div class="s-join-hint">or scan the code with your phone</div>
+      </div>
+    </div>
+    <h2 class="s-players-h">Players</h2>
+    <div id="s-players" class="s-players"></div>
+  </section>
+
+  <!-- Playing -->
+  <section id="s-playing" class="screen-section" style="display:none;">
+    <div class="s-songcount">Song <span id="s-songnum">1</span> / <span id="s-total">0</span></div>
+    <div id="s-record" class="s-record"><div class="s-record-q">?</div></div>
+    <img id="s-art" class="s-art" style="display:none;" alt="">
+    <div id="s-answer" style="display:none;">
+      <div id="s-song-title" class="s-song-title"></div>
+      <div id="s-song-artist" class="s-song-artist"></div>
+      <div class="s-addedby">Added by <span id="s-addedby"></span></div>
+    </div>
+    <div id="countdown-box" class="countdown-box s-countdown" style="display:none;">
+      <div class="countdown-label">Voting closes in <span id="countdown-num"></span>s</div>
+      <div class="countdown-track"><div id="countdown-fill" class="countdown-fill"></div></div>
+    </div>
+    <div id="s-ntt" class="s-ntt" style="display:none;">&#127911; Guess now for <span id="s-ntt-points">3</span> pts</div>
+    <div id="s-votetally" class="s-votetally"><span id="s-votecount">0</span> / <span id="s-votetotal">0</span> voted</div>
+    <div id="s-votechart" class="vote-chart s-votechart"></div>
+  </section>
+
+  <!-- Finished -->
+  <section id="s-finished" class="screen-section" style="display:none;">
+    <h1 class="s-title">&#127942; Final Scoreboard</h1>
+    <div id="s-scoreboard" class="s-scoreboard"></div>
+    <div id="s-awards" class="s-awards-list"></div>
+  </section>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/shared.js?v=8"></script>
+  <script>
+    const socket = io();
+    const quizId = window.location.pathname.split('/').pop();
+    let features = {};
+
+    function show(id) {
+      ['s-lobby', 's-playing', 's-finished'].forEach(s => {
+        document.getElementById(s).style.display = (s === id) ? 'flex' : 'none';
+      });
+    }
+
+    function renderPlayers(list) {
+      if (!list || list.length === 0) {
+        document.getElementById('s-players').innerHTML = '<div class="s-waiting">Waiting for players to join&hellip;</div>';
+        return;
+      }
+      document.getElementById('s-players').innerHTML = list.map(c => {
+        const name = typeof c === 'string' ? c : c.username;
+        const count = (typeof c === 'object' && c.songCount) ? c.songCount : 0;
+        return `<div class="s-player"><span>${escapeHtml(name)}</span><span class="s-player-badge">${count}</span></div>`;
+      }).join('');
+    }
+
+    function setPlaying(index, total) {
+      show('s-playing');
+      document.getElementById('s-songnum').textContent = (index || 0) + 1;
+      document.getElementById('s-total').textContent = total || 0;
+      document.getElementById('s-record').style.display = 'flex';
+      document.getElementById('s-art').style.display = 'none';
+      document.getElementById('s-answer').style.display = 'none';
+      document.getElementById('s-votechart').innerHTML = '';
+      document.getElementById('s-votetally').style.display = '';
+      document.getElementById('s-votecount').textContent = '0';
+      hideCountdown();
+      const ntt = document.getElementById('s-ntt');
+      if (features.nameThatTune) { document.getElementById('s-ntt-points').textContent = '3'; ntt.style.display = ''; }
+      else ntt.style.display = 'none';
+    }
+
+    function showReveal(d) {
+      hideCountdown();
+      document.getElementById('s-record').style.display = 'none';
+      const art = document.getElementById('s-art');
+      if (d.albumArt) { art.src = d.albumArt; art.style.display = ''; } else { art.style.display = 'none'; }
+      document.getElementById('s-song-title').textContent = d.title || '';
+      document.getElementById('s-song-artist').textContent = d.artist || '';
+      document.getElementById('s-addedby').textContent = d.addedBy || '';
+      document.getElementById('s-answer').style.display = '';
+      document.getElementById('s-votetally').style.display = 'none';
+      document.getElementById('s-ntt').style.display = 'none';
+      renderVoteChart(features.voteChart ? d.distribution : null, 's-votechart');
+      if (features.effects) spawnConfetti();
+    }
+
+    function showFinished(scores, songs, awards) {
+      show('s-finished');
+      document.getElementById('s-scoreboard').innerHTML = (scores || []).map((s, i) => {
+        const medal = i === 0 ? '&#129351;' : i === 1 ? '&#129352;' : i === 2 ? '&#129353;' : '';
+        return `<div class="s-score-row ${i === 0 ? 'winner' : ''}">
+          <span class="s-rank">${medal} #${i + 1}</span>
+          <span class="s-score-name">${escapeHtml(s.username)}</span>
+          <span class="s-score-val">${s.score}</span>
+        </div>`;
+      }).join('');
+      renderAwards(awards, 's-awards');
+    }
+
+    socket.emit('join-screen', { quizId }, (res) => {
+      if (res.error) { document.getElementById('s-title').textContent = res.error; return; }
+      const quiz = res.quiz;
+      features = quiz.features || {};
+      document.getElementById('s-title').textContent = quiz.name;
+      const url = window.location.origin + '/quiz/' + quiz.id;
+      document.getElementById('s-join-url').textContent = url.replace(/^https?:\/\//, '');
+      document.getElementById('s-qr').src = '/quiz/' + quiz.id + '/qr.png';
+      renderPlayers(res.contestants);
+
+      if (quiz.state === 'finished') {
+        showFinished(res.scores || [], res.songs || [], res.awards || []);
+      } else if (quiz.state === 'playing') {
+        setPlaying(quiz.currentIndex, quiz.totalSongs);
+        document.getElementById('s-votetotal').textContent = res.totalEligible || 0;
+        if (res.reveal) showReveal(res.reveal);
+        else document.getElementById('s-votecount').textContent = res.voteCount || 0;
+      } else {
+        show('s-lobby');
+      }
+    });
+
+    socket.on('contestant-joined', ({ contestants }) => renderPlayers(contestants));
+    socket.on('songs-updated', ({ contestants }) => renderPlayers(contestants));
+    socket.on('quiz-started', ({ totalSongs, currentIndex, eligibleVoterCount }) => {
+      setPlaying(currentIndex, totalSongs);
+      document.getElementById('s-votetotal').textContent = eligibleVoterCount || 0;
+    });
+    socket.on('next-song', ({ currentIndex, totalSongs, eligibleVoterCount }) => {
+      setPlaying(currentIndex, totalSongs);
+      document.getElementById('s-votetotal').textContent = eligibleVoterCount || 0;
+    });
+    socket.on('prev-song', ({ currentIndex, totalSongs, eligibleVoterCount }) => {
+      setPlaying(currentIndex, totalSongs);
+      document.getElementById('s-votetotal').textContent = eligibleVoterCount || 0;
+    });
+    socket.on('vote-update', ({ voteCount, totalContestants }) => {
+      document.getElementById('s-votecount').textContent = voteCount;
+      document.getElementById('s-votetotal').textContent = totalContestants;
+    });
+    socket.on('countdown-started', ({ seconds }) => showCountdown(seconds));
+    socket.on('tier-changed', ({ points }) => { document.getElementById('s-ntt-points').textContent = points; });
+    socket.on('answer-revealed', (d) => showReveal(d));
+    socket.on('quiz-finished', ({ scores, songs, awards }) => showFinished(scores, songs, awards));
+    socket.on('reaction', ({ emoji }) => spawnReaction(emoji));
+  </script>
+</body>
+</html>

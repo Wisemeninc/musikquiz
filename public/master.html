@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>OnlyMIP MusicQuiz - Quiz Master</title>
   <link rel="icon" type="image/svg+xml" href="/logo.svg">
-  <link rel="stylesheet" href="/style.css?v=4">
+  <link rel="stylesheet" href="/style.css?v=8">
   <script src="/theme.js?v=3"></script>
 </head>
 <body>
@@ -62,6 +62,8 @@
           <img id="qr-img" alt="QR code for the join link" width="220" height="220">
           <p class="hint">Scan to join — or copy the link above to mail it out</p>
         </div>
+        <button class="btn btn-secondary" onclick="openScreen()" style="margin-top:14px;">&#128250; Open TV view</button>
+        <p class="hint">Cast this to a TV or projector for the room to watch.</p>
       </div>
 
       <div class="card">
@@ -116,6 +118,14 @@
           <div class="countdown-label">Voting closes in <span id="countdown-num"></span>s</div>
           <div class="countdown-track"><div id="countdown-fill" class="countdown-fill"></div></div>
         </div>
+        <div id="ntt-controls" class="ntt-controls" style="display:none;">
+          <div class="ntt-label">&#127911; Name That Tune — <span id="ntt-tier-label">Snippet 1 (3s · 3 pts)</span></div>
+          <div class="ntt-buttons">
+            <button class="btn btn-secondary" onclick="playTier(1)">&#9654; 3s snippet</button>
+            <button class="btn btn-secondary" onclick="playTier(2)">&#9654; 8s snippet</button>
+            <button class="btn btn-secondary" onclick="playTier(3)">&#9654; Full song</button>
+          </div>
+        </div>
       </div>
 
       <div class="card">
@@ -130,6 +140,7 @@
           <button class="btn btn-secondary" onclick="sfxDrumroll()">&#129345; Drumroll</button>
           <button class="btn btn-secondary" onclick="sfxSadTrombone()">&#128577; Sad Trombone</button>
           <button class="btn btn-secondary" onclick="sfxFanfare()">&#127881; Fanfare</button>
+          <button class="btn btn-secondary" onclick="sfxFyret()">&#128293; Du er fyret</button>
         </div>
       </div>
 
@@ -157,6 +168,11 @@
         <div id="scoreboard"></div>
         <div id="awards-list"></div>
       </div>
+      <div class="card" id="export-card" style="display:none;">
+        <h2>&#127911; Save this quiz</h2>
+        <button id="export-playlist-btn" class="btn btn-primary" onclick="exportPlaylist()">Export to Spotify playlist</button>
+        <p id="export-status" class="hint"></p>
+      </div>
       <div class="card">
         <h2>All Songs</h2>
         <div id="finished-songs-list"></div>
@@ -172,10 +188,12 @@
 
   <script src="https://sdk.scdn.co/spotify-player.js"></script>
   <script src="/socket.io/socket.io.js"></script>
-  <script src="/shared.js?v=3"></script>
+  <script src="/shared.js?v=8"></script>
   <script>
     const socket = io();
     const quizId = window.location.pathname.split('/').pop();
+
+    window.openScreen = () => window.open('/screen/' + quizId, '_blank');
 
     // ─── Soundboard (master device only; WebAudio synth, no asset files) ─────
     let sfxCtx = null;
@@ -268,10 +286,19 @@
         sfxTone(ctx, { type: 'triangle', from: f, t0: t + 0.56, dur: 0.8, vol: 0.18 }));
     }
 
+    // "Du er så fyret" — sample bite from a Krifa reel
+    let fyretAudio = null;
+    function sfxFyret() {
+      if (!fyretAudio) fyretAudio = new Audio('/sfx/fyret.m4a');
+      fyretAudio.currentTime = 0;
+      fyretAudio.play().catch(() => {});
+    }
+
     window.sfxAirhorn = sfxAirhorn;
     window.sfxDrumroll = sfxDrumroll;
     window.sfxSadTrombone = sfxSadTrombone;
     window.sfxFanfare = sfxFanfare;
+    window.sfxFyret = sfxFyret;
 
     // Global flags shared between top-level and initMaster scopes
     // (must be at top-level so Spotify SDK can find this callback when it loads)
@@ -340,6 +367,7 @@
     let currentPosition = 0;
     let currentDuration = 0;
     let quizFeatures = {};
+    let lastFinishedSongs = [];
 
     // Check if we have a valid token
     if (spotifyAccessToken && Date.now() < spotifyTokenExpiry) {
@@ -365,6 +393,14 @@
         banner.classList.add('connected');
         statusText.textContent = 'Spotify connected - full playback enabled';
         loginBtn.textContent = 'Reconnect';
+        // If a finished quiz is on screen, reveal the now-usable export button
+        const exportCard = document.getElementById('export-card');
+        if (quizFeatures.playlistExport && exportCard && exportCard.style.display !== 'none') {
+          const eb = document.getElementById('export-playlist-btn');
+          eb.style.display = '';
+          eb.disabled = false;
+          document.getElementById('export-status').textContent = '';
+        }
       } else {
         banner.classList.remove('connected');
         statusText.textContent = 'Connect Spotify Premium for full track playback';
@@ -487,9 +523,16 @@
       spotifyPlayer.connect();
     }
 
-    async function playTrack(trackId) {
+    // Name That Tune tiers (must mirror server TIER_SECONDS/TIER_POINTS)
+    const NTT_TIERS = [{ s: 3, p: 3 }, { s: 8, p: 2 }, { s: 0, p: 1 }];
+    let snippetTimer = null;
+    let currentTrackId = null;
+
+    async function playTrack(trackId, snippetSeconds) {
+      currentTrackId = trackId;
+      if (snippetTimer) { clearTimeout(snippetTimer); snippetTimer = null; }
       if (!spotifyDeviceId || !spotifyAccessToken) {
-        // Fallback to iframe
+        // Fallback to iframe (snippet auto-stop needs the SDK / Premium)
         loadIframePlayer(trackId);
         return;
       }
@@ -501,7 +544,7 @@
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ uris: [`spotify:track:${trackId}`] })
+        body: JSON.stringify({ uris: [`spotify:track:${trackId}`], position_ms: 0 })
       });
 
       if (!res.ok && res.status !== 204) {
@@ -515,6 +558,29 @@
       isPlaying = true;
       updatePlayButton();
       startProgressTimer();
+
+      // Name That Tune: pause after the snippet length
+      if (snippetSeconds && snippetSeconds > 0) {
+        snippetTimer = setTimeout(() => {
+          if (spotifyPlayer) spotifyPlayer.pause();
+        }, snippetSeconds * 1000);
+      }
+    }
+
+    // Play / advance to a snippet tier (1-based), tell the room, replay from 0
+    function playTier(tier) {
+      const t = Math.max(1, Math.min(NTT_TIERS.length, tier));
+      const conf = NTT_TIERS[t - 1];
+      updateNttLabel(t);
+      socket.emit('set-tier', { quizId, tier: t }, () => {});
+      if (currentTrackId) playTrack(currentTrackId, conf.s);
+    }
+
+    function updateNttLabel(tier) {
+      const conf = NTT_TIERS[tier - 1];
+      const lenTxt = conf.s > 0 ? conf.s + 's' : 'full';
+      document.getElementById('ntt-tier-label').textContent =
+        `Snippet ${tier} (${lenTxt} · ${conf.p} pt${conf.p === 1 ? '' : 's'})`;
     }
 
     function togglePlayback() {
@@ -803,8 +869,19 @@
         document.getElementById('sdk-album-art').style.display = 'block';
       }
 
-      // Play via SDK or fallback to iframe
-      if (spotifyDeviceId && spotifyAccessToken) {
+      currentTrackId = song.trackId;
+      const ntt = !!quizFeatures.nameThatTune;
+      document.getElementById('ntt-controls').style.display = ntt ? 'block' : 'none';
+
+      if (ntt) {
+        // Start each song at snippet tier 1 (server resets its tier on song change)
+        updateNttLabel(1);
+        if (spotifyDeviceId && spotifyAccessToken) {
+          playTrack(song.trackId, NTT_TIERS[0].s);
+        } else {
+          loadIframePlayer(song.trackId);
+        }
+      } else if (spotifyDeviceId && spotifyAccessToken) {
         playTrack(song.trackId);
       } else {
         loadIframePlayer(song.trackId);
@@ -852,6 +929,27 @@
 
       // Render all songs
       const songList = songs || masterRevealedSongs;
+
+      // Spotify playlist export card (master only, when feature on)
+      lastFinishedSongs = songList;
+      const exportCard = document.getElementById('export-card');
+      const exportBtn = document.getElementById('export-playlist-btn');
+      const exportStatus = document.getElementById('export-status');
+      if (quizFeatures.playlistExport) {
+        exportCard.style.display = 'block';
+        exportStatus.innerHTML = '';
+        if (spotifyAccessToken) {
+          exportBtn.disabled = false;
+          exportBtn.style.display = '';
+        } else {
+          exportBtn.disabled = true;
+          exportBtn.style.display = 'none';
+          exportStatus.textContent = 'Connect Spotify (banner at the top) to save this quiz as a playlist.';
+        }
+      } else {
+        exportCard.style.display = 'none';
+      }
+
       if (songList.length > 0) {
         const songsHtml = songList.map((s, i) => {
           const spotifyUrl = `https://open.spotify.com/track/${escapeHtml(s.trackId)}`;
@@ -896,6 +994,34 @@
     window.nextSong = nextSong;
     window.togglePlayback = togglePlayback;
     window.startCountdown = startCountdown;
+    window.exportPlaylist = exportPlaylist;
+    window.playTier = playTier;
+
+    // ─── Spotify playlist export (uses the master's connected token) ─────────
+    async function exportPlaylist() {
+      const btn = document.getElementById('export-playlist-btn');
+      const status = document.getElementById('export-status');
+      btn.disabled = true;
+      status.textContent = 'Creating playlist…';
+      try {
+        const quizName = (document.getElementById('quiz-title').textContent || 'Music Quiz').trim();
+        const r = await spotifyExportPlaylist({
+          name: `${quizName} \u{1F3B5} ${new Date().toLocaleDateString()}`,
+          trackIds: (lastFinishedSongs || []).map(s => s.trackId),
+          getToken: getValidToken
+        });
+        status.innerHTML = `✅ Playlist created (${r.count} tracks) — <a href="${escapeHtml(r.url)}" target="_blank" rel="noopener">open in Spotify</a>`;
+      } catch (e) {
+        btn.disabled = false;
+        if (e.message === 'empty') {
+          status.textContent = 'No tracks to export.';
+        } else if (e.message === 'scope') {
+          status.textContent = 'Spotify needs playlist permission — click "Reconnect" in the Spotify banner at the top, then try again.';
+        } else {
+          status.textContent = 'Export failed. Try reconnecting Spotify and exporting again.';
+        }
+      }
+    }
 
     } // end initMaster
 

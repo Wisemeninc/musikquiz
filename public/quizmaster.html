@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>OnlyMIP MusicQuiz - Quiz Master</title>
   <link rel="icon" type="image/svg+xml" href="/logo.svg">
-  <link rel="stylesheet" href="/style.css?v=4">
+  <link rel="stylesheet" href="/style.css?v=8">
   <script src="/theme.js?v=3"></script>
 </head>
 <body>
@@ -57,6 +57,8 @@
             <label><input type="checkbox" id="feat-votechart" checked> Vote distribution chart on reveal</label>
             <label><input type="checkbox" id="feat-awards" checked> End-of-quiz awards</label>
             <label><input type="checkbox" id="feat-soundboard" checked> Soundboard on master page (airhorn, drumroll&hellip;)</label>
+            <label><input type="checkbox" id="feat-playlist" checked> Export finished quiz as a Spotify playlist</label>
+            <label><input type="checkbox" id="feat-ntt"> Name That Tune — play short snippets, guess early for more points</label>
           </fieldset>
           <button type="submit" class="btn btn-primary">Create Quiz</button>
         </form>
@@ -76,7 +78,7 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="/shared.js?v=3"></script>
+  <script src="/shared.js?v=8"></script>
   <script>
     const socket = io();
     let masterPassword = sessionStorage.getItem('master_password') || '';
@@ -141,6 +143,9 @@
         const resumeBtn = q.state !== 'finished'
           ? `<a href="/master/${q.id}" class="btn btn-small btn-resume" onclick="event.stopPropagation()">Resume</a>`
           : '';
+        const exportBtn = (q.state === 'finished' && q.songCount > 0)
+          ? `<button class="btn btn-small btn-export" onclick="event.stopPropagation(); exportQuizPlaylist('${q.id}', this)">&#127911; Export</button>`
+          : '';
         return `<div class="quiz-history-entry" id="entry-${q.id}">
           <div class="quiz-history-item" onclick="toggleQuizSongs('${q.id}', this)">
             <div class="quiz-history-info">
@@ -149,6 +154,7 @@
             </div>
             <div class="quiz-history-actions">
               ${resumeBtn}
+              ${exportBtn}
               <button class="btn btn-small btn-delete" onclick="event.stopPropagation(); deleteQuiz('${q.id}')">Delete</button>
               <span class="quiz-state ${stateClass}">${stateLabel}</span>
             </div>
@@ -226,7 +232,9 @@
         effects: document.getElementById('feat-effects').checked,
         voteChart: document.getElementById('feat-votechart').checked,
         awards: document.getElementById('feat-awards').checked,
-        soundboard: document.getElementById('feat-soundboard').checked
+        soundboard: document.getElementById('feat-soundboard').checked,
+        playlistExport: document.getElementById('feat-playlist').checked,
+        nameThatTune: document.getElementById('feat-ntt').checked
       };
 
       socket.emit('create-quiz', { quizName, songsPerPerson, password: masterPassword, features }, (response) => {
@@ -235,6 +243,64 @@
         }
       });
     });
+
+    // ─── Export a past quiz as a Spotify playlist ──────────────────────────────
+    // Reuses the Spotify token the host stored when connecting on a master page.
+    async function getSpotifyTokenForExport() {
+      let token = localStorage.getItem('spotify_access_token');
+      const refresh = localStorage.getItem('spotify_refresh_token');
+      const expiry = parseInt(localStorage.getItem('spotify_token_expiry') || '0', 10);
+      if (!token && !refresh) throw new Error('noauth');
+      if (Date.now() >= expiry - 60000) {
+        if (!refresh) throw new Error('noauth');
+        const res = await fetch('/auth/spotify/refresh', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refresh_token: refresh })
+        });
+        if (!res.ok) throw new Error('noauth');
+        const d = await res.json();
+        token = d.access_token;
+        localStorage.setItem('spotify_access_token', token);
+        localStorage.setItem('spotify_token_expiry', String(Date.now() + d.expires_in * 1000));
+        if (d.refresh_token) localStorage.setItem('spotify_refresh_token', d.refresh_token);
+      }
+      return token;
+    }
+
+    async function exportQuizPlaylist(quizId, btn) {
+      const original = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Exporting…';
+      try {
+        const res = await fetch('/api/quiz/' + quizId, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: masterPassword })
+        });
+        if (!res.ok) throw new Error('fetch');
+        const data = await res.json();
+        const dateStr = new Date(data.createdAt || Date.now()).toLocaleDateString();
+        const r = await spotifyExportPlaylist({
+          name: `${(data.name || 'Music Quiz')} \u{1F3B5} ${dateStr}`,
+          trackIds: (data.songs || []).map(s => s.trackId),
+          getToken: getSpotifyTokenForExport
+        });
+        btn.outerHTML = `<a class="btn btn-small btn-resume" href="${escapeHtml(r.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Open playlist (${r.count})</a>`;
+      } catch (e) {
+        btn.disabled = false;
+        btn.textContent = original;
+        if (e.message === 'noauth') {
+          alert('Connect Spotify first: open any quiz’s master page in this browser and click "Connect Spotify", then come back and export.');
+        } else if (e.message === 'scope') {
+          alert('Spotify needs playlist permission. Open a master page, click "Reconnect" in the Spotify banner, then try again.');
+        } else if (e.message === 'empty') {
+          alert('This quiz has no exportable tracks.');
+        } else {
+          alert('Export failed. Make sure Spotify is connected on a master page in this browser.');
+        }
+      }
+    }
   </script>
 </body>
 </html>

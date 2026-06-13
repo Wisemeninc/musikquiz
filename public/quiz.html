@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>OnlyMIP MusicQuiz - Join</title>
   <link rel="icon" type="image/svg+xml" href="/logo.svg">
-  <link rel="stylesheet" href="/style.css?v=4">
+  <link rel="stylesheet" href="/style.css?v=8">
   <script src="/theme.js?v=3"></script>
 </head>
 <body>
@@ -73,10 +73,12 @@
         <h2>Now Playing</h2>
         <p class="song-counter">Song <span id="song-number">1</span> of <span id="total-songs">0</span></p>
         <p class="hint">Listen to the song playing in the room...</p>
+        <div id="reactions-bar" class="reactions-bar"></div>
       </div>
 
       <div class="card" id="vote-card">
         <h2>Who picked this song?</h2>
+        <div id="ntt-banner" class="ntt-banner" style="display:none;">&#127911; Name That Tune — guess now for <strong id="ntt-points">3</strong> points!</div>
         <div id="countdown-box" class="countdown-box" style="display:none;">
           <div class="countdown-label">Voting closes in <span id="countdown-num"></span>s</div>
           <div class="countdown-track"><div id="countdown-fill" class="countdown-fill"></div></div>
@@ -124,7 +126,7 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="/shared.js?v=3"></script>
+  <script src="/shared.js?v=8"></script>
   <script>
     const socket = io();
     const quizId = window.location.pathname.split('/').pop();
@@ -135,6 +137,20 @@
     let revealedSongs = [];
     let currentSongTrackId = null;
     let quizFeatures = {};
+
+    // Emoji reactions bar (tap floats locally + broadcasts to the TV screen)
+    (function buildReactionsBar() {
+      const bar = document.getElementById('reactions-bar');
+      if (!bar) return;
+      bar.innerHTML = REACTION_EMOJIS.map(e => `<button type="button" class="reaction-btn" data-emoji="${e}">${e}</button>`).join('');
+      bar.querySelectorAll('.reaction-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const emoji = btn.dataset.emoji;
+          spawnReaction(emoji);
+          socket.emit('react', { quizId, emoji });
+        });
+      });
+    })();
 
     // Restore session — use localStorage so it survives tab close/reopen
     const savedUsername = localStorage.getItem(`quiz-${quizId}-username`);
@@ -340,6 +356,10 @@
       showCountdown(seconds);
     });
 
+    socket.on('tier-changed', ({ points }) => {
+      document.getElementById('ntt-points').textContent = points;
+    });
+
     socket.on('next-song', ({ currentIndex, currentSong, totalSongs, previousSong }) => {
       hasVoted = false;
       hideCountdown();
@@ -370,6 +390,7 @@
 
     socket.on('answer-revealed', ({ addedBy, title, artist, trackId, albumArt, votes, distribution }) => {
       hideCountdown();
+      document.getElementById('ntt-banner').style.display = 'none';
       document.getElementById('answer-card').style.display = 'block';
       document.getElementById('answer-card').classList.add('reveal-animate');
       document.getElementById('answer-name').textContent = addedBy;
@@ -434,6 +455,17 @@
       currentSongTrackId = song.trackId;
       document.getElementById('song-number').textContent = index + 1;
       document.getElementById('total-songs').textContent = total;
+      resetNttBanner();
+    }
+
+    function resetNttBanner() {
+      const b = document.getElementById('ntt-banner');
+      if (quizFeatures.nameThatTune) {
+        document.getElementById('ntt-points').textContent = '3';
+        b.style.display = 'block';
+      } else {
+        b.style.display = 'none';
+      }
     }
 
     function renderVoteButtons() {

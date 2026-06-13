@@ -96,7 +96,7 @@ async function getSpotifyToken() {
 
 // ─── Spotify OAuth (User Auth for Web Playback SDK) ───────────────────────────
 
-const SPOTIFY_SCOPES = 'streaming user-read-email user-read-private user-modify-playback-state user-read-playback-state';
+const SPOTIFY_SCOPES = 'streaming user-read-email user-read-private user-modify-playback-state user-read-playback-state playlist-modify-public playlist-modify-private';
 
 // In-memory state store for OAuth CSRF protection (state → expiry)
 const oauthStates = new Map();
@@ -270,7 +270,10 @@ function getQuizFilePath(quizId) {
 
 function saveQuiz(quiz) {
   const filePath = getQuizFilePath(quiz.id);
-  fs.writeFileSync(filePath, JSON.stringify(quiz, null, 2), 'utf8');
+  // Write to a temp file then rename so a crash mid-write can't corrupt the quiz
+  const tmpPath = `${filePath}.${process.pid}.tmp`;
+  fs.writeFileSync(tmpPath, JSON.stringify(quiz, null, 2), 'utf8');
+  fs.renameSync(tmpPath, filePath);
 }
 
 function loadAllQuizzes() {
@@ -317,6 +320,10 @@ app.get('/master/:id', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'master.html'));
 });
 
+app.get('/screen/:id', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'screen.html'));
+});
+
 // QR code PNG of the public join link (the link itself stays primary for mailing)
 app.get('/quiz/:id/qr.png', (req, res) => {
   if (!isValidQuizId(req.params.id)) return res.status(400).end();
@@ -351,13 +358,19 @@ const DEFAULT_FEATURES = {
   effects: true,       // confetti / flash / vibration on reveal
   voteChart: true,     // vote distribution bars on reveal
   awards: true,        // end-of-quiz awards
-  soundboard: true     // host sound effects on the master page (countdown stays silent)
+  soundboard: true,    // host sound effects on the master page (countdown stays silent)
+  playlistExport: true,// export the finished quiz as a Spotify playlist (master only)
+  nameThatTune: false  // progressive snippet round: earlier correct guess scores more
 };
+
+// Name That Tune tiers: snippet length (s, 0 = full) and points for a correct vote at that tier
+const TIER_SECONDS = [3, 8, 0];
+const TIER_POINTS = [3, 2, 1];
 
 function sanitizeFeatures(input) {
   const f = { ...DEFAULT_FEATURES };
   if (input && typeof input === 'object') {
-    for (const key of ['qr', 'countdown', 'effects', 'voteChart', 'awards', 'soundboard']) {
+    for (const key of ['qr', 'countdown', 'effects', 'voteChart', 'awards', 'soundboard', 'playlistExport', 'nameThatTune']) {
       if (typeof input[key] === 'boolean') f[key] = input[key];
     }
     const secs = parseInt(input.countdownSeconds, 10);
@@ -462,6 +475,28 @@ function clearCountdown(quizId) {
 }
 
 // Single reveal path used by manual reveal, all-voted auto-reveal and countdown expiry
+// Pure builder for an answer-revealed payload (used by reveal + screen rejoin)
+function buildRevealPayload(quiz, idx) {
+  const song = quiz.queue[idx];
+  if (!song) return null;
+  const songVotes = quiz.votes[idx] || {};
+  const results = {};
+  const distribution = {};
+  for (const [voter, votedFor] of Object.entries(songVotes)) {
+    results[voter] = { votedFor, correct: ownersOf(song).includes(votedFor) };
+    distribution[votedFor] = (distribution[votedFor] || 0) + 1;
+  }
+  return {
+    addedBy: ownersLabel(song),
+    title: song.title,
+    artist: song.artist,
+    trackId: song.trackId,
+    albumArt: song.albumArt,
+    votes: results,
+    distribution
+  };
+}
+
 function revealCurrentSong(quizId, quiz) {
   const currentSong = quiz.queue[quiz.currentIndex];
   if (!currentSong) return null;
@@ -473,23 +508,7 @@ function revealCurrentSong(quizId, quiz) {
     saveQuiz(quiz);
   }
 
-  const songVotes = quiz.votes[quiz.currentIndex] || {};
-  const results = {};
-  const distribution = {};
-  for (const [voter, votedFor] of Object.entries(songVotes)) {
-    results[voter] = { votedFor, correct: ownersOf(currentSong).includes(votedFor) };
-    distribution[votedFor] = (distribution[votedFor] || 0) + 1;
-  }
-
-  const payload = {
-    addedBy: ownersLabel(currentSong),
-    title: currentSong.title,
-    artist: currentSong.artist,
-    trackId: currentSong.trackId,
-    albumArt: currentSong.albumArt,
-    votes: results,
-    distribution
-  };
+  const payload = buildRevealPayload(quiz, quiz.currentIndex);
   io.to(`quiz-${quizId}`).emit('answer-revealed', payload);
   return payload;
 }
@@ -525,6 +544,19 @@ function calculateAwards(quiz) {
   }
   return awards;
 }
+
+// Per-socket sliding-window rate limiter; returns true if the action is allowed
+function allowAction(socket, key, max, windowMs) {
+  const now = Date.now();
+  if (!socket._rl) socket._rl = {};
+  const recent = (socket._rl[key] || []).filter(t => now - t < windowMs);
+  if (recent.length >= max) { socket._rl[key] = recent; return false; }
+  recent.push(now);
+  socket._rl[key] = recent;
+  return true;
+}
+
+const ALLOWED_REACTIONS = new Set(['\u{1F525}', '\u{1F602}', '\u{1F631}', '\u{1F44F}', '❤️', '\u{1F389}']);
 
 // ─── Socket.IO ─────────────────────────────────────────────────────────────────
 
@@ -653,6 +685,11 @@ io.on('connection', (socket) => {
 
   // ─── Spotify Search ────────────────────────────────────────────────────────
   socket.on('search-spotify', async ({ query }, callback) => {
+    callback = typeof callback === 'function' ? callback : () => {};
+    // Protect the shared Spotify API quota from a single spamming contestant
+    if (!allowAction(socket, 'search', 8, 5000)) {
+      return callback({ tracks: [], error: 'Slow down — too many searches, try again in a moment' });
+    }
     try {
       const tracks = await searchSpotify(query);
       callback({ tracks });
@@ -660,6 +697,15 @@ io.on('connection', (socket) => {
       console.error('Spotify search error:', err.message);
       callback({ tracks: [], error: err.message });
     }
+  });
+
+  // ─── Emoji Reaction (floats on the TV screen) ──────────────────────────────
+  socket.on('react', ({ quizId, emoji }) => {
+    const quiz = quizzes[quizId];
+    if (!quiz || socket.quizId !== quizId) return;
+    if (!ALLOWED_REACTIONS.has(emoji)) return;
+    if (!allowAction(socket, 'react', 6, 3000)) return;
+    io.to(`quiz-${quizId}`).emit('reaction', { emoji });
   });
 
   // ─── Add Song ──────────────────────────────────────────────────────────────
@@ -762,6 +808,8 @@ io.on('connection', (socket) => {
     quiz.state = 'playing';
     quiz.currentIndex = 0;
     quiz.votes = {};
+    quiz.voteTiers = {};
+    quiz.currentTier = 1;
     saveQuiz(quiz);
 
     callback({ success: true });
@@ -796,6 +844,7 @@ io.on('connection', (socket) => {
 
     clearCountdown(quizId);
     quiz.currentIndex--;
+    quiz.currentTier = 1;
     saveQuiz(quiz);
     const song = quiz.queue[quiz.currentIndex];
     const eligibleVoterCount = Object.values(quiz.contestants)
@@ -825,6 +874,7 @@ io.on('connection', (socket) => {
 
     clearCountdown(quizId);
     quiz.currentIndex++;
+    quiz.currentTier = 1;
 
     if (quiz.currentIndex >= quiz.queue.length) {
       quiz.state = 'finished';
@@ -911,6 +961,24 @@ io.on('connection', (socket) => {
     callback({ success: true });
   });
 
+  // ─── Name That Tune: advance the snippet tier (master only) ────────────────
+  socket.on('set-tier', ({ quizId, tier }, callback) => {
+    callback = typeof callback === 'function' ? callback : () => {};
+    const quiz = quizzes[quizId];
+    if (!quiz) return callback({ error: 'Quiz not found' });
+    if (socket.id !== quiz.masterId) return callback({ error: 'Not the quiz master' });
+    if (!featuresOf(quiz).nameThatTune) return callback({ error: 'Not in Name That Tune mode' });
+    const t = Math.max(1, Math.min(TIER_POINTS.length, parseInt(tier, 10) || 1));
+    quiz.currentTier = t;
+    saveQuiz(quiz);
+    io.to(`quiz-${quizId}`).emit('tier-changed', {
+      tier: t,
+      points: TIER_POINTS[t - 1],
+      snippetSeconds: TIER_SECONDS[t - 1]
+    });
+    callback({ success: true });
+  });
+
   // ─── Vote ──────────────────────────────────────────────────────────────────
   socket.on('vote', ({ quizId, votedFor }, callback) => {
     const quiz = quizzes[quizId];
@@ -937,6 +1005,12 @@ io.on('connection', (socket) => {
     const idx = quiz.currentIndex;
     if (!quiz.votes[idx]) quiz.votes[idx] = {};
     quiz.votes[idx][contestant.username] = votedFor;
+    // Name That Tune: stamp the snippet tier this vote was locked in at
+    if (featuresOf(quiz).nameThatTune) {
+      if (!quiz.voteTiers) quiz.voteTiers = {};
+      if (!quiz.voteTiers[idx]) quiz.voteTiers[idx] = {};
+      quiz.voteTiers[idx][contestant.username] = quiz.currentTier || 1;
+    }
     saveQuiz(quiz);
 
     callback({ success: true });
@@ -964,6 +1038,43 @@ io.on('connection', (socket) => {
     const quiz = quizzes[quizId];
     if (!quiz) return callback({ error: 'Quiz not found' });
     callback({ quiz: sanitizeQuizForContestant(quiz) });
+  });
+
+  // ─── Join as TV Screen (read-only spectator; gets the contestant-safe stream) ──
+  socket.on('join-screen', ({ quizId }, callback) => {
+    const quiz = quizzes[quizId];
+    if (!quiz) return callback({ error: 'Quiz not found' });
+    socket.join(`quiz-${quizId}`);
+    socket.quizId = quizId;
+
+    const res = {
+      quiz: sanitizeQuizForContestant(quiz),
+      contestants: Object.values(quiz.contestants).map(c => ({
+        username: c.username,
+        songCount: c.songs.length
+      }))
+    };
+
+    if (quiz.state === 'finished') {
+      res.scores = calculateScores(quiz);
+      res.songs = quiz.queue.map(s => ({
+        title: s.title, artist: s.artist, albumArt: s.albumArt, trackId: s.trackId, addedBy: ownersLabel(s)
+      }));
+      res.awards = featuresOf(quiz).awards ? calculateAwards(quiz) : [];
+    } else if (quiz.state === 'playing') {
+      const idx = quiz.currentIndex;
+      const cur = quiz.queue[idx];
+      const eligible = cur
+        ? Object.values(quiz.contestants).filter(c => !ownersOf(cur).includes(c.username)).length
+        : 0;
+      res.totalEligible = eligible;
+      if (quiz.revealedIndices && quiz.revealedIndices.includes(idx)) {
+        res.reveal = buildRevealPayload(quiz, idx);
+      } else {
+        res.voteCount = Object.keys(quiz.votes[idx] || {}).length;
+      }
+    }
+    callback(res);
   });
 
   // ─── Disconnect ────────────────────────────────────────────────────────────
@@ -1020,6 +1131,13 @@ function sanitizeQuizForContestant(quiz) {
 }
 
 function calculateScores(quiz) {
+  const nameThatTune = featuresOf(quiz).nameThatTune;
+  // Points for a correct vote: classic = 1; Name That Tune = points for the tier it was locked at
+  const pointsFor = (idx, voter) => {
+    if (!nameThatTune) return 1;
+    const tier = (quiz.voteTiers && quiz.voteTiers[idx] && quiz.voteTiers[idx][voter]) || TIER_POINTS.length;
+    return TIER_POINTS[tier - 1] || 1;
+  };
   const scores = {};
   for (const c of Object.values(quiz.contestants || {})) {
     scores[c.username] = 0;
@@ -1029,7 +1147,7 @@ function calculateScores(quiz) {
     if (!song) continue;
     for (const [voter, votedFor] of Object.entries(songVotes)) {
       if (ownersOf(song).includes(votedFor)) {
-        scores[voter] = (scores[voter] || 0) + 1;
+        scores[voter] = (scores[voter] || 0) + pointsFor(idx, voter);
       }
     }
   }

@@ -1480,3 +1480,136 @@ html:not([data-theme]) .btn-primary:hover {
   background: linear-gradient(180deg, #fff099 0%, #ffe033 60%, #f0cc00 100%);
   box-shadow: 0 4px 20px rgba(255, 215, 0, 0.50);
 }
+
+/* ─── Epic hero silhouettes (landmark + animated foreground per theme) ─────── */
+
+/* OF: ghosted OnlyFans ring landmark, lower-right */
+html[data-theme=""] body::after,
+html:not([data-theme]) body::after {
+  content: '';
+  position: fixed;
+  right: -110px;
+  bottom: -110px;
+  width: 440px;
+  height: 440px;
+  z-index: -1;
+  pointer-events: none;
+  background: url('/img/of-ring.svg') no-repeat center / contain;
+  opacity: 0.5;
+}
+
+/* UA: golden wheat field swaying along the bottom */
+[data-theme="ua"] body::after {
+  content: '';
+  position: fixed;
+  left: -10%;
+  right: -10%;
+  bottom: 0;
+  height: 150px;
+  z-index: -1;
+  pointer-events: none;
+  background: url('/img/ua-wheat.svg') repeat-x bottom / 240px 150px;
+  transform-origin: bottom center;
+  animation: ua-sway 6s ease-in-out infinite;
+}
+@keyframes ua-sway {
+  0%, 100% { transform: skewX(-2deg); }
+  50%      { transform: skewX(2deg); }
+}
+
+/* PH: synthwave sun rising on the horizon, glow pulsing */
+[data-theme="ph"] body::after {
+  content: '';
+  position: fixed;
+  left: 50%;
+  bottom: -40px;
+  width: 360px;
+  height: 360px;
+  margin-left: -180px;
+  z-index: -1;
+  pointer-events: none;
+  background: url('/img/ph-sun.svg') no-repeat center bottom / contain;
+  animation: ph-sun-glow 5s ease-in-out infinite;
+}
+@keyframes ph-sun-glow {
+  0%, 100% { filter: drop-shadow(0 0 26px rgba(255, 144, 0, 0.40)); }
+  50%      { filter: drop-shadow(0 0 56px rgba(255, 144, 0, 0.72)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-theme="ua"] body::after,
+  [data-theme="ph"] body::after { animation: none; }
+}
+
+/* ─── Name That Tune ──────────────────────────────────────────────────────── */
+.ntt-banner {
+  background: rgba(var(--accent-rgb), 0.14);
+  border: 1px solid rgba(var(--accent-rgb), 0.35);
+  color: var(--accent);
+  border-radius: 12px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  text-align: center;
+  font-size: 1rem;
+}
+.ntt-banner strong { font-size: 1.15em; }
+.ntt-controls {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid rgba(var(--accent-rgb), 0.3);
+  border-radius: 12px;
+  background: rgba(var(--accent-rgb), 0.06);
+}
+.ntt-label { color: var(--accent); font-weight: 600; margin-bottom: 10px; text-align: center; }
+.ntt-buttons { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+.ntt-buttons .btn { flex: 1 1 28%; }
+.s-ntt {
+  font-size: clamp(1.1rem, 2.6vw, 2rem);
+  font-weight: 700;
+  color: var(--accent);
+}
+
+/* History "Export to Spotify" button */
+.btn-export {
+  background: #1ed760;
+  color: #06210f;
+  font-weight: 700;
+}
+.btn-export:hover { background: #28e36b; }
+
+/* ─── Emoji reactions ─────────────────────────────────────────────────────── */
+.reactions-bar {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.reaction-btn {
+  font-size: 1.6rem;
+  line-height: 1;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 1000px;
+  padding: 8px 14px;
+  cursor: pointer;
+  transition: transform 0.1s, background 0.2s;
+}
+.reaction-btn:hover { background: var(--hover-bg); }
+.reaction-btn:active { transform: scale(0.86); }
+.reaction-float {
+  position: fixed;
+  bottom: 8vh;
+  z-index: 10000;
+  pointer-events: none;
+  animation: reaction-rise 3.2s ease-out forwards;
+}
+@keyframes reaction-rise {
+  0%   { transform: translateY(0) translateX(0) scale(0.6); opacity: 0; }
+  12%  { opacity: 1; transform: translateY(-8vh) scale(1.1); }
+  100% { transform: translateY(-78vh) translateX(var(--drift, 0)) scale(1); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .reaction-float { animation: reaction-fade 1.6s ease-out forwards; }
+  @keyframes reaction-fade { 0% { opacity: 0; } 20% { opacity: 1; } 100% { opacity: 0; } }
+}

@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>OnlyMIP MusicQuiz - Quiz Master</title>
   <link rel="icon" type="image/svg+xml" href="/logo.svg">
-  <link rel="stylesheet" href="/style.css">
-  <script src="/theme.js"></script>
+  <link rel="stylesheet" href="/style.css?v=4">
+  <script src="/theme.js?v=3"></script>
 </head>
 <body>
   <div class="container">
@@ -58,6 +58,10 @@
             <button class="btn btn-small" onclick="copyLink()">Copy</button>
           </div>
         </div>
+        <div id="qr-box" class="qr-box" style="display:none;">
+          <img id="qr-img" alt="QR code for the join link" width="220" height="220">
+          <p class="hint">Scan to join — or copy the link above to mail it out</p>
+        </div>
       </div>
 
       <div class="card">
@@ -104,14 +108,29 @@
         </div>
         <div class="playback-controls">
           <button class="btn btn-secondary" onclick="prevSong()">&#9664; Previous Song</button>
+          <button class="btn btn-secondary" id="countdown-btn" onclick="startCountdown()" style="display:none;">&#9201; Start Countdown</button>
           <button class="btn btn-primary" onclick="revealAnswer()">Reveal Answer</button>
           <button class="btn btn-primary" onclick="nextSong()">Next Song &#9654;</button>
+        </div>
+        <div id="countdown-box" class="countdown-box" style="display:none;">
+          <div class="countdown-label">Voting closes in <span id="countdown-num"></span>s</div>
+          <div class="countdown-track"><div id="countdown-fill" class="countdown-fill"></div></div>
         </div>
       </div>
 
       <div class="card">
         <h2>Votes</h2>
         <p id="vote-status">Waiting for votes... <span id="vote-count">0</span>/<span id="total-contestants">0</span></p>
+      </div>
+
+      <div class="card" id="soundboard-card" style="display:none;">
+        <h2>&#127908; Soundboard</h2>
+        <div class="soundboard">
+          <button class="btn btn-secondary" onclick="sfxAirhorn()">&#128226; Airhorn</button>
+          <button class="btn btn-secondary" onclick="sfxDrumroll()">&#129345; Drumroll</button>
+          <button class="btn btn-secondary" onclick="sfxSadTrombone()">&#128577; Sad Trombone</button>
+          <button class="btn btn-secondary" onclick="sfxFanfare()">&#127881; Fanfare</button>
+        </div>
       </div>
 
       <div class="card" id="answer-card" style="display:none;">
@@ -121,6 +140,7 @@
           <p class="answer-song-artist" id="answer-song-artist"></p>
         </div>
         <p class="answer-reveal">Added by: <strong id="answer-name"></strong></p>
+        <div id="vote-distribution" class="vote-chart"></div>
         <div id="answer-votes"></div>
       </div>
 
@@ -135,6 +155,7 @@
       <div class="card">
         <h2>&#127942; Final Scoreboard</h2>
         <div id="scoreboard"></div>
+        <div id="awards-list"></div>
       </div>
       <div class="card">
         <h2>All Songs</h2>
@@ -151,18 +172,106 @@
 
   <script src="https://sdk.scdn.co/spotify-player.js"></script>
   <script src="/socket.io/socket.io.js"></script>
+  <script src="/shared.js?v=3"></script>
   <script>
     const socket = io();
     const quizId = window.location.pathname.split('/').pop();
 
-    function escapeHtml(str) {
-      return String(str)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#x27;');
+    // ─── Soundboard (master device only; WebAudio synth, no asset files) ─────
+    let sfxCtx = null;
+    function sfx() {
+      if (!sfxCtx) sfxCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (sfxCtx.state === 'suspended') sfxCtx.resume();
+      return sfxCtx;
     }
+
+    function sfxTone(ctx, { type = 'sawtooth', from, to, t0, dur, vol = 0.3, slideDur }) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(from, t0);
+      if (to) osc.frequency.linearRampToValueAtTime(to, t0 + (slideDur || dur));
+      gain.gain.setValueAtTime(0, t0);
+      gain.gain.linearRampToValueAtTime(vol, t0 + 0.02);
+      gain.gain.setValueAtTime(vol, t0 + dur - 0.08);
+      gain.gain.linearRampToValueAtTime(0.0001, t0 + dur);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t0);
+      osc.stop(t0 + dur);
+    }
+
+    // Real air-horn sample (Peter's pick); synth kept as fallback
+    let airhornAudio = null;
+    function sfxAirhorn() {
+      if (!airhornAudio) {
+        airhornAudio = new Audio('/sfx/airhorn.m4a');
+        airhornAudio.addEventListener('error', () => { airhornAudio = null; });
+      }
+      airhornAudio.currentTime = 0;
+      airhornAudio.play().catch(() => sfxAirhornSynth());
+    }
+
+    function sfxAirhornSynth() {
+      const ctx = sfx(); const t = ctx.currentTime;
+      for (const detune of [0, 6, -8]) {
+        sfxTone(ctx, { from: 415 + detune, to: 440 + detune, t0: t, dur: 1.1, vol: 0.22, slideDur: 0.15 });
+      }
+    }
+
+    // Real drum-roll sample (Peter's pick); synth kept as fallback
+    let drumrollAudio = null;
+    function sfxDrumroll() {
+      if (!drumrollAudio) {
+        drumrollAudio = new Audio('/sfx/drumroll.m4a');
+        drumrollAudio.addEventListener('error', () => { drumrollAudio = null; });
+      }
+      drumrollAudio.currentTime = 0;
+      drumrollAudio.play().catch(() => sfxDrumrollSynth());
+    }
+
+    function sfxDrumrollSynth() {
+      const ctx = sfx(); const t = ctx.currentTime; const dur = 1.8;
+      const buf = ctx.createBuffer(1, ctx.sampleRate * dur, ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+      const src = ctx.createBufferSource(); src.buffer = buf;
+      const band = ctx.createBiquadFilter(); band.type = 'bandpass'; band.frequency.value = 220; band.Q.value = 0.8;
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.05, t);
+      gain.gain.linearRampToValueAtTime(0.45, t + dur);   // crescendo
+      const gate = ctx.createGain();                       // roll pulse ~28Hz
+      const lfo = ctx.createOscillator(); lfo.type = 'square'; lfo.frequency.value = 28;
+      const lfoGain = ctx.createGain(); lfoGain.gain.value = 0.5;
+      gate.gain.value = 0.5;
+      lfo.connect(lfoGain).connect(gate.gain);
+      src.connect(band).connect(gate).connect(gain).connect(ctx.destination);
+      lfo.start(t); src.start(t); src.stop(t + dur); lfo.stop(t + dur);
+    }
+
+    function sfxSadTrombone() {
+      const ctx = sfx(); const t = ctx.currentTime;
+      const notes = [233.08, 220.0, 207.65, 185.0];        // wah wah wah waaah
+      notes.forEach((f, i) => {
+        const start = t + i * 0.45;
+        const dur = i === notes.length - 1 ? 1.2 : 0.4;
+        sfxTone(ctx, { from: f * 1.04, to: f, t0: start, dur, vol: 0.28, slideDur: 0.12 });
+      });
+    }
+
+    function sfxFanfare() {
+      const ctx = sfx(); const t = ctx.currentTime;
+      const notes = [523.25, 659.25, 783.99, 1046.5];      // C5 E5 G5 C6
+      notes.forEach((f, i) => {
+        sfxTone(ctx, { type: 'triangle', from: f, t0: t + i * 0.14, dur: i === 3 ? 0.8 : 0.18, vol: 0.3 });
+      });
+      [523.25, 659.25, 783.99].forEach(f =>
+        sfxTone(ctx, { type: 'triangle', from: f, t0: t + 0.56, dur: 0.8, vol: 0.18 }));
+    }
+
+    window.sfxAirhorn = sfxAirhorn;
+    window.sfxDrumroll = sfxDrumroll;
+    window.sfxSadTrombone = sfxSadTrombone;
+    window.sfxFanfare = sfxFanfare;
 
     // Global flags shared between top-level and initMaster scopes
     // (must be at top-level so Spotify SDK can find this callback when it loads)
@@ -181,6 +290,8 @@
     let masterPassword = sessionStorage.getItem('master_password') || '';
 
     if (masterPassword) {
+      // Hide the gate while auto-verifying so it doesn't flash on every load
+      document.getElementById('password-gate').style.display = 'none';
       verifyAndUnlock(masterPassword);
     }
 
@@ -190,11 +301,18 @@
     });
 
     async function verifyAndUnlock(password) {
-      const res = await fetch('/api/auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password })
-      });
+      let res;
+      try {
+        res = await fetch('/api/auth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password })
+        });
+      } catch (e) {
+        // Network failure: re-show the gate so the page is never blank
+        document.getElementById('password-gate').style.display = 'block';
+        return;
+      }
       if (res.ok) {
         masterPassword = password;
         sessionStorage.setItem('master_password', password);
@@ -202,6 +320,7 @@
         document.getElementById('master-content').style.display = 'block';
         initMaster();
       } else {
+        document.getElementById('password-gate').style.display = 'block';
         document.getElementById('gate-error').style.display = 'block';
         sessionStorage.removeItem('master_password');
       }
@@ -220,6 +339,7 @@
     let masterRevealedSongs = [];
     let currentPosition = 0;
     let currentDuration = 0;
+    let quizFeatures = {};
 
     // Check if we have a valid token
     if (spotifyAccessToken && Date.now() < spotifyTokenExpiry) {
@@ -404,6 +524,9 @@
 
     function updatePlayButton() {
       const btn = document.getElementById('sdk-play-btn');
+      const state = isPlaying ? 'pause' : 'play';
+      if (btn.dataset.state === state) return;  // avoid rewriting on every SDK tick
+      btn.dataset.state = state;
       btn.innerHTML = isPlaying ? '&#10074;&#10074; Pause' : '&#9654; Play';
     }
 
@@ -458,25 +581,33 @@
         return;
       }
       const quiz = response.quiz;
+      quizFeatures = quiz.features || {};
       document.getElementById('quiz-title').textContent = quiz.name;
       const baseUrl = window.location.origin;
-      document.getElementById('share-link').value = `${baseUrl}/quiz/${quiz.id}`;
+      const shareUrl = `${baseUrl}/quiz/${quiz.id}`;
+      document.getElementById('share-link').value = shareUrl;
+      // QR supplements the link — the link stays for mailing out from a computer
+      if (quizFeatures.qr) {
+        const qrImg = document.getElementById('qr-img');
+        qrImg.onload = () => { document.getElementById('qr-box').style.display = 'block'; };
+        qrImg.src = `/quiz/${quiz.id}/qr.png`;
+      }
       updateContestantsList(quiz.contestants);
 
       if (quiz.state === 'playing') {
         showPlayingView(quiz);
       } else if (quiz.state === 'finished') {
-        const scores = calculateLocalScores(quiz);
+        const scores = response.scores || calculateLocalScores(quiz);
         const songs = (quiz.queue || []).map(s => ({
           title: s.title, artist: s.artist, albumArt: s.albumArt, trackId: s.trackId, addedBy: s.addedBy
         }));
-        showFinishedView(scores, songs);
+        showFinishedView(scores, songs, response.awards);
       }
     });
 
     // Events
     socket.on('contestant-joined', ({ username, contestants }) => {
-      updateContestantsList(contestants.map(u => ({ username: u, songCount: 0 })));
+      updateContestantsList(contestants);
     });
 
     socket.on('songs-updated', ({ contestants }) => {
@@ -489,6 +620,7 @@
     });
 
     socket.on('next-song', ({ currentIndex, currentSong, totalSongs, previousSong, eligibleVoterCount }) => {
+      hideCountdown();
       document.getElementById('answer-card').style.display = 'none';
       document.getElementById('vote-count').textContent = '0';
       if (eligibleVoterCount !== undefined) {
@@ -502,6 +634,7 @@
     });
 
     socket.on('prev-song', ({ currentIndex, currentSong, totalSongs, eligibleVoterCount }) => {
+      hideCountdown();
       document.getElementById('answer-card').style.display = 'none';
       document.getElementById('vote-count').textContent = '0';
       if (eligibleVoterCount !== undefined) {
@@ -515,13 +648,20 @@
       document.getElementById('total-contestants').textContent = totalContestants;
     });
 
-    socket.on('quiz-finished', ({ scores, songs }) => {
-      showFinishedView(scores, songs);
+    socket.on('quiz-finished', ({ scores, songs, awards }) => {
+      showFinishedView(scores, songs, awards);
     });
 
-    socket.on('answer-revealed', ({ addedBy, title, artist, trackId, albumArt, votes }) => {
+    socket.on('countdown-started', ({ seconds }) => {
+      showCountdown(seconds);
+    });
+
+    socket.on('answer-revealed', ({ addedBy, title, artist, trackId, albumArt, votes, distribution }) => {
+      hideCountdown();
       document.getElementById('answer-card').style.display = 'block';
       document.getElementById('answer-name').textContent = addedBy;
+      renderVoteChart(quizFeatures.voteChart ? distribution : null, 'vote-distribution');
+      if (quizFeatures.effects) spawnConfetti();
       if (title && trackId) {
         const spotifyUrl = `https://open.spotify.com/track/${escapeHtml(trackId)}`;
         document.getElementById('answer-song-title').innerHTML = `<a href="${spotifyUrl}" target="_blank" rel="noopener">${escapeHtml(title)}</a>`;
@@ -537,10 +677,6 @@
         return `<div class="vote-result">${icon} <strong>${escapeHtml(voter)}</strong> voted for "${escapeHtml(data.votedFor)}"</div>`;
       }).join('');
       document.getElementById('answer-votes').innerHTML = votesHtml;
-    });
-
-    socket.on('quiz-finished', ({ scores, songs }) => {
-      showFinishedView(scores, songs);
     });
 
     // Functions
@@ -604,12 +740,28 @@
       });
     }
 
+    function updateCountdownButton() {
+      document.getElementById('countdown-btn').style.display = quizFeatures.countdown ? '' : 'none';
+      if (quizFeatures.countdown) {
+        document.getElementById('countdown-btn').innerHTML = `&#9201; Start Countdown (${quizFeatures.countdownSeconds || 30}s)`;
+      }
+      document.getElementById('soundboard-card').style.display = quizFeatures.soundboard ? '' : 'none';
+    }
+
+    function startCountdown() {
+      socket.emit('start-countdown', { quizId }, (response) => {
+        if (response.error) alert(response.error);
+      });
+    }
+
     function showPlayingView(quiz) {
       document.getElementById('lobby-view').style.display = 'none';
       document.getElementById('playing-view').style.display = 'block';
+      updateCountdownButton();
       const currentSong = quiz.queue && quiz.queue[quiz.currentIndex];
+      const owners = currentSong ? (currentSong.owners || [currentSong.addedBy]) : [];
       const eligibleCount = currentSong
-        ? Object.values(quiz.contestants).filter(c => c.username !== currentSong.addedBy).length
+        ? Object.values(quiz.contestants).filter(c => !owners.includes(c.username)).length
         : Object.keys(quiz.contestants).length;
       document.getElementById('total-contestants').textContent = eligibleCount;
       // Restore all songs before current index
@@ -635,6 +787,7 @@
     function showPlayingViewFromEvent(totalSongs, currentIndex, currentSong) {
       document.getElementById('lobby-view').style.display = 'none';
       document.getElementById('playing-view').style.display = 'block';
+      updateCountdownButton();
       playSong(currentSong, currentIndex, totalSongs);
     }
 
@@ -676,10 +829,12 @@
       });
     }
 
-    function showFinishedView(scores, songs) {
+    function showFinishedView(scores, songs, awards) {
+      hideCountdown();
       document.getElementById('lobby-view').style.display = 'none';
       document.getElementById('playing-view').style.display = 'none';
       document.getElementById('finished-view').style.display = 'block';
+      renderAwards(awards, 'awards-list');  // server omits awards when the feature is off
 
       // Stop playback
       if (spotifyPlayer) spotifyPlayer.pause();
@@ -740,6 +895,7 @@
     window.prevSong = prevSong;
     window.nextSong = nextSong;
     window.togglePlayback = togglePlayback;
+    window.startCountdown = startCountdown;
 
     } // end initMaster
 

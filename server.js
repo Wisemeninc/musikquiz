@@ -2,6 +2,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const { v4: uuidv4 } = require('uuid');
+const QRCode = require('qrcode');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -316,10 +317,58 @@ app.get('/master/:id', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'master.html'));
 });
 
+// QR code PNG of the public join link (the link itself stays primary for mailing)
+app.get('/quiz/:id/qr.png', (req, res) => {
+  if (!isValidQuizId(req.params.id)) return res.status(400).end();
+  const quiz = quizzes[req.params.id];
+  if (!quiz) return res.status(404).end();
+  const joinUrl = `${req.protocol}://${req.get('host')}/quiz/${req.params.id}`;
+  res.type('png');
+  QRCode.toFileStream(res, joinUrl, { width: 220, margin: 1 });
+});
+
 // ─── Input Validation ──────────────────────────────────────────────────────────
 
 function isValidQuizId(id) {
   return typeof id === 'string' && /^[a-f0-9]{8}$/.test(id);
+}
+
+// Spotify track IDs are 22 base62 characters
+function isValidTrackId(id) {
+  return typeof id === 'string' && /^[A-Za-z0-9]{22}$/.test(id);
+}
+
+function cleanText(value, maxLen) {
+  return typeof value === 'string' ? value.trim().slice(0, maxLen) : '';
+}
+
+// ─── Quiz Features ─────────────────────────────────────────────────────────────
+
+const DEFAULT_FEATURES = {
+  qr: true,            // QR code in master lobby
+  countdown: true,     // host-triggered silent vote countdown
+  countdownSeconds: 30,
+  effects: true,       // confetti / flash / vibration on reveal
+  voteChart: true,     // vote distribution bars on reveal
+  awards: true,        // end-of-quiz awards
+  soundboard: true     // host sound effects on the master page (countdown stays silent)
+};
+
+function sanitizeFeatures(input) {
+  const f = { ...DEFAULT_FEATURES };
+  if (input && typeof input === 'object') {
+    for (const key of ['qr', 'countdown', 'effects', 'voteChart', 'awards', 'soundboard']) {
+      if (typeof input[key] === 'boolean') f[key] = input[key];
+    }
+    const secs = parseInt(input.countdownSeconds, 10);
+    if (Number.isInteger(secs)) f.countdownSeconds = Math.min(300, Math.max(5, secs));
+  }
+  return f;
+}
+
+// Older persisted quizzes have no features field — they get the defaults
+function featuresOf(quiz) {
+  return sanitizeFeatures(quiz.features);
 }
 
 // ─── Master API (password-protected) ──────────────────────────────────────────
@@ -369,22 +418,8 @@ app.post('/api/quiz/:id', express.json(), (req, res) => {
     artist: s.artist,
     albumArt: s.albumArt,
     trackId: s.trackId,
-    addedBy: s.addedBy
+    addedBy: ownersLabel(s)
   }));
-
-  const scores = {};
-  for (const c of Object.values(quiz.contestants || {})) {
-    scores[c.username] = 0;
-  }
-  for (const [idx, songVotes] of Object.entries(quiz.votes || {})) {
-    const song = quiz.queue[parseInt(idx)];
-    if (!song) continue;
-    for (const [, votedFor] of Object.entries(songVotes)) {
-      if (votedFor === song.addedBy) {
-        scores[votedFor] = (scores[votedFor] || 0) + 1;
-      }
-    }
-  }
 
   res.json({
     id: quiz.id,
@@ -393,9 +428,7 @@ app.post('/api/quiz/:id', express.json(), (req, res) => {
     createdAt: quiz.createdAt,
     contestants: Object.values(quiz.contestants || {}).map(c => c.username),
     songs,
-    scores: Object.entries(scores)
-      .map(([username, score]) => ({ username, score }))
-      .sort((a, b) => b.score - a.score)
+    scores: calculateScores(quiz)
   });
 });
 
@@ -416,19 +449,98 @@ app.delete('/api/quiz/:id', express.json(), (req, res) => {
   res.json({ success: true });
 });
 
+// ─── Countdown Timers (in-memory, per quiz) ───────────────────────────────────
+
+const countdownTimers = new Map(); // quizId → Timeout
+
+function clearCountdown(quizId) {
+  const timer = countdownTimers.get(quizId);
+  if (timer) {
+    clearTimeout(timer);
+    countdownTimers.delete(quizId);
+  }
+}
+
+// Single reveal path used by manual reveal, all-voted auto-reveal and countdown expiry
+function revealCurrentSong(quizId, quiz) {
+  const currentSong = quiz.queue[quiz.currentIndex];
+  if (!currentSong) return null;
+
+  clearCountdown(quizId);
+  if (!quiz.revealedIndices) quiz.revealedIndices = [];
+  if (!quiz.revealedIndices.includes(quiz.currentIndex)) {
+    quiz.revealedIndices.push(quiz.currentIndex);
+    saveQuiz(quiz);
+  }
+
+  const songVotes = quiz.votes[quiz.currentIndex] || {};
+  const results = {};
+  const distribution = {};
+  for (const [voter, votedFor] of Object.entries(songVotes)) {
+    results[voter] = { votedFor, correct: ownersOf(currentSong).includes(votedFor) };
+    distribution[votedFor] = (distribution[votedFor] || 0) + 1;
+  }
+
+  const payload = {
+    addedBy: ownersLabel(currentSong),
+    title: currentSong.title,
+    artist: currentSong.artist,
+    trackId: currentSong.trackId,
+    albumArt: currentSong.albumArt,
+    votes: results,
+    distribution
+  };
+  io.to(`quiz-${quizId}`).emit('answer-revealed', payload);
+  return payload;
+}
+
+function calculateAwards(quiz) {
+  // Per owner: how many votes their songs tricked vs. how often they were seen through
+  const fooled = {};
+  const caught = {};
+  for (const [idx, songVotes] of Object.entries(quiz.votes || {})) {
+    const song = (quiz.queue || [])[parseInt(idx)];
+    if (!song) continue;
+    const owners = ownersOf(song);
+    for (const votedFor of Object.values(songVotes)) {
+      const correct = owners.includes(votedFor);
+      for (const owner of owners) {
+        if (correct) caught[owner] = (caught[owner] || 0) + 1;
+        else fooled[owner] = (fooled[owner] || 0) + 1;
+      }
+    }
+  }
+  const top = (counts) => {
+    const max = Math.max(...Object.values(counts));
+    return [Object.keys(counts).filter(k => counts[k] === max).join(' & '), max];
+  };
+  const awards = [];
+  if (Object.keys(fooled).length > 0) {
+    const [names, n] = top(fooled);
+    awards.push({ emoji: '\u{1F3AD}', title: 'Master of Deception', username: names, detail: `tricked ${n} vote${n === 1 ? '' : 's'}` });
+  }
+  if (Object.keys(caught).length > 0) {
+    const [names, n] = top(caught);
+    awards.push({ emoji: '\u{1F4D6}', title: 'Open Book', username: names, detail: `guessed right ${n} time${n === 1 ? '' : 's'} by the others` });
+  }
+  return awards;
+}
+
 // ─── Socket.IO ─────────────────────────────────────────────────────────────────
 
 io.on('connection', (socket) => {
   console.log(`Socket connected: ${socket.id}`);
 
   // ─── Create Quiz ───────────────────────────────────────────────────────────
-  socket.on('create-quiz', ({ quizName, songsPerPerson, password }, callback) => {
+  socket.on('create-quiz', ({ quizName, songsPerPerson, password, features }, callback) => {
     if (!checkPassword(password)) return callback({ error: 'Unauthorized' });
     const quizId = uuidv4().slice(0, 8);
     const quiz = {
       id: quizId,
-      name: quizName || 'Music Quiz',
-      songsPerPerson: songsPerPerson || 3,
+      name: cleanText(quizName, 100) || 'Music Quiz',
+      songsPerPerson: Number.isInteger(songsPerPerson) && songsPerPerson >= 1 && songsPerPerson <= 20
+        ? songsPerPerson : 3,
+      features: sanitizeFeatures(features),
       state: 'lobby', // lobby | playing | finished
       contestants: {},
       queue: [],
@@ -456,7 +568,17 @@ io.on('connection', (socket) => {
     socket.quizId = quizId;
     socket.isMaster = true;
     saveQuiz(quiz);
-    callback({ quiz });
+    // Master view: addedBy as display label, owners as array for vote-count math
+    const masterQuiz = {
+      ...quiz,
+      features: featuresOf(quiz),
+      queue: (quiz.queue || []).map(s => ({ ...s, addedBy: ownersLabel(s), owners: ownersOf(s) }))
+    };
+    callback({
+      quiz: masterQuiz,
+      scores: quiz.state === 'finished' ? calculateScores(quiz) : undefined,
+      awards: quiz.state === 'finished' && featuresOf(quiz).awards ? calculateAwards(quiz) : undefined
+    });
   });
 
   // ─── Join Quiz ─────────────────────────────────────────────────────────────
@@ -489,9 +611,10 @@ io.on('connection', (socket) => {
       const myVote = quiz.votes[quiz.currentIndex]?.[trimmed] || null;
       const myScores = quiz.state === 'finished' ? calculateScores(quiz) : null;
       const allSongs = quiz.state === 'finished'
-        ? quiz.queue.map(s => ({ title: s.title, artist: s.artist, albumArt: s.albumArt, trackId: s.trackId, addedBy: s.addedBy }))
+        ? quiz.queue.map(s => ({ title: s.title, artist: s.artist, albumArt: s.albumArt, trackId: s.trackId, addedBy: ownersLabel(s) }))
         : null;
-      callback({ quiz: sanitizeQuizForContestant(quiz), mySongs: contestantData.songs, myVote, scores: myScores, songs: allSongs });
+      const myAwards = quiz.state === 'finished' && featuresOf(quiz).awards ? calculateAwards(quiz) : null;
+      callback({ quiz: sanitizeQuizForContestant(quiz), mySongs: contestantData.songs, myVote, scores: myScores, songs: allSongs, awards: myAwards });
       return;
     }
 
@@ -501,6 +624,10 @@ io.on('connection', (socket) => {
       delete quiz.contestants[oldSocketId];
       quiz.contestants[socket.id] = { username: trimmed, songs };
     } else {
+      // Length cap applies to new joins only, so existing names can always rejoin
+      if (trimmed.length > 40) {
+        return callback({ error: 'Name too long (max 40 characters)' });
+      }
       quiz.contestants[socket.id] = { username: trimmed, songs: [] };
     }
 
@@ -515,7 +642,10 @@ io.on('connection', (socket) => {
     if (!existingEntry) {
       io.to(`quiz-${quizId}`).emit('contestant-joined', {
         username: trimmed,
-        contestants: Object.values(quiz.contestants).map(c => c.username)
+        contestants: Object.values(quiz.contestants).map(c => ({
+          username: c.username,
+          songCount: c.songs.length
+        }))
       });
     }
     console.log(`${trimmed} joined quiz ${quizId}`);
@@ -544,11 +674,20 @@ io.on('connection', (socket) => {
       return callback({ error: `Maximum ${quiz.songsPerPerson} songs allowed` });
     }
 
+    // Never trust client-supplied song data: validate id, cap text, https-only art
+    if (!song || !isValidTrackId(song.trackId)) {
+      return callback({ error: 'Invalid song' });
+    }
+    const title = cleanText(song.title, 200);
+    const artist = cleanText(song.artist, 200);
+    const albumArt = /^https:\/\//.test(song.albumArt || '') ? String(song.albumArt).slice(0, 300) : '';
+    if (!title) return callback({ error: 'Invalid song' });
+
     contestant.songs.push({
       trackId: song.trackId,
-      title: song.title,
-      artist: song.artist,
-      albumArt: song.albumArt
+      title,
+      artist,
+      albumArt
     });
     saveQuiz(quiz);
 
@@ -600,13 +739,26 @@ io.on('connection', (socket) => {
 
     if (allSongs.length === 0) return callback({ error: 'No songs added yet' });
 
+    // Merge duplicate tracks: if several contestants picked the same song it
+    // becomes one queue entry owned by all of them
+    const byTrack = new Map();
+    for (const song of allSongs) {
+      const existing = byTrack.get(song.trackId);
+      if (existing) {
+        if (!existing.addedBy.includes(song.addedBy)) existing.addedBy.push(song.addedBy);
+      } else {
+        byTrack.set(song.trackId, { ...song, addedBy: [song.addedBy] });
+      }
+    }
+    const queue = [...byTrack.values()];
+
     // Fisher-Yates shuffle
-    for (let i = allSongs.length - 1; i > 0; i--) {
+    for (let i = queue.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
-      [allSongs[i], allSongs[j]] = [allSongs[j], allSongs[i]];
+      [queue[i], queue[j]] = [queue[j], queue[i]];
     }
 
-    quiz.queue = allSongs;
+    quiz.queue = queue;
     quiz.state = 'playing';
     quiz.currentIndex = 0;
     quiz.votes = {};
@@ -615,7 +767,7 @@ io.on('connection', (socket) => {
     callback({ success: true });
     const firstSong = quiz.queue[0];
     const eligibleVoterCount = Object.values(quiz.contestants)
-      .filter(c => c.username !== firstSong.addedBy).length;
+      .filter(c => !ownersOf(firstSong).includes(c.username)).length;
     // Send full song info to master only
     io.to(quiz.masterId).emit('quiz-started', {
       totalSongs: quiz.queue.length,
@@ -642,11 +794,12 @@ io.on('connection', (socket) => {
     if (socket.id !== quiz.masterId) return callback({ error: 'Not the quiz master' });
     if (quiz.currentIndex <= 0) return callback({ error: 'Already at first song' });
 
+    clearCountdown(quizId);
     quiz.currentIndex--;
     saveQuiz(quiz);
     const song = quiz.queue[quiz.currentIndex];
     const eligibleVoterCount = Object.values(quiz.contestants)
-      .filter(c => c.username !== song.addedBy).length;
+      .filter(c => !ownersOf(song).includes(c.username)).length;
     // Full info to master
     io.to(quiz.masterId).emit('prev-song', {
       currentIndex: quiz.currentIndex,
@@ -670,6 +823,7 @@ io.on('connection', (socket) => {
     if (!quiz) return callback({ error: 'Quiz not found' });
     if (socket.id !== quiz.masterId) return callback({ error: 'Not the quiz master' });
 
+    clearCountdown(quizId);
     quiz.currentIndex++;
 
     if (quiz.currentIndex >= quiz.queue.length) {
@@ -681,22 +835,26 @@ io.on('connection', (socket) => {
         artist: s.artist,
         albumArt: s.albumArt,
         trackId: s.trackId,
-        addedBy: s.addedBy
+        addedBy: ownersLabel(s)
       }));
-      io.to(`quiz-${quizId}`).emit('quiz-finished', { scores, songs });
+      const awards = featuresOf(quiz).awards ? calculateAwards(quiz) : [];
+      io.to(`quiz-${quizId}`).emit('quiz-finished', { scores, songs, awards });
       callback({ finished: true, scores });
     } else {
       saveQuiz(quiz);
       const song = quiz.queue[quiz.currentIndex];
       const prevSong = quiz.queue[quiz.currentIndex - 1];
       const eligibleVoterCount = Object.values(quiz.contestants)
-        .filter(c => c.username !== song.addedBy).length;
+        .filter(c => !ownersOf(song).includes(c.username)).length;
+      const previousSong = prevSong
+        ? { title: prevSong.title, artist: prevSong.artist, albumArt: prevSong.albumArt, trackId: prevSong.trackId, addedBy: ownersLabel(prevSong) }
+        : null;
       // Full info to master (include previous song for history)
       io.to(quiz.masterId).emit('next-song', {
         currentIndex: quiz.currentIndex,
         currentSong: sanitizeSong(song),
         totalSongs: quiz.queue.length,
-        previousSong: prevSong ? { title: prevSong.title, artist: prevSong.artist, albumArt: prevSong.albumArt, trackId: prevSong.trackId, addedBy: prevSong.addedBy } : null,
+        previousSong,
         eligibleVoterCount
       });
       // Stripped info to contestants
@@ -704,7 +862,7 @@ io.on('connection', (socket) => {
         currentIndex: quiz.currentIndex,
         currentSong: sanitizeSongForContestant(song),
         totalSongs: quiz.queue.length,
-        previousSong: prevSong ? { title: prevSong.title, artist: prevSong.artist, albumArt: prevSong.albumArt, trackId: prevSong.trackId, addedBy: prevSong.addedBy } : null,
+        previousSong,
         eligibleVoterCount
       });
       callback({ finished: false, currentIndex: quiz.currentIndex });
@@ -717,34 +875,40 @@ io.on('connection', (socket) => {
     if (!quiz) return callback({ error: 'Quiz not found' });
     if (socket.id !== quiz.masterId) return callback({ error: 'Not the quiz master' });
 
-    const currentSong = quiz.queue[quiz.currentIndex];
-    if (!currentSong) return callback({ error: 'No current song' });
+    const payload = revealCurrentSong(quizId, quiz);
+    if (!payload) return callback({ error: 'No current song' });
+    callback({ addedBy: payload.addedBy, votes: payload.votes });
+  });
 
-    // Track revealed indices
-    if (!quiz.revealedIndices) quiz.revealedIndices = [];
-    if (!quiz.revealedIndices.includes(quiz.currentIndex)) {
-      quiz.revealedIndices.push(quiz.currentIndex);
-      saveQuiz(quiz);
+  // ─── Start Countdown (silent, visual only) ─────────────────────────────────
+  socket.on('start-countdown', ({ quizId }, callback) => {
+    const quiz = quizzes[quizId];
+    if (!quiz) return callback({ error: 'Quiz not found' });
+    if (socket.id !== quiz.masterId) return callback({ error: 'Not the quiz master' });
+    if (quiz.state !== 'playing') return callback({ error: 'Quiz not in progress' });
+    const features = featuresOf(quiz);
+    if (!features.countdown) return callback({ error: 'Countdown is disabled for this quiz' });
+    if (quiz.revealedIndices && quiz.revealedIndices.includes(quiz.currentIndex)) {
+      return callback({ error: 'Answer already revealed' });
     }
 
-    const songVotes = quiz.votes[quiz.currentIndex] || {};
-    const results = {};
-    for (const [voter, votedFor] of Object.entries(songVotes)) {
-      results[voter] = {
-        votedFor,
-        correct: votedFor === currentSong.addedBy
-      };
-    }
+    const seconds = features.countdownSeconds;
+    const songIndex = quiz.currentIndex;
+    clearCountdown(quizId);
+    countdownTimers.set(quizId, setTimeout(() => {
+      countdownTimers.delete(quizId);
+      const q = quizzes[quizId];
+      // Only reveal if the quiz is still on the same unrevealed song
+      if (!q || q.state !== 'playing' || q.currentIndex !== songIndex) return;
+      if (q.revealedIndices && q.revealedIndices.includes(songIndex)) return;
+      revealCurrentSong(quizId, q);
+    }, seconds * 1000));
 
-    io.to(`quiz-${quizId}`).emit('answer-revealed', {
-      addedBy: currentSong.addedBy,
-      title: currentSong.title,
-      artist: currentSong.artist,
-      trackId: currentSong.trackId,
-      albumArt: currentSong.albumArt,
-      votes: results
+    io.to(`quiz-${quizId}`).emit('countdown-started', {
+      seconds,
+      endsAt: Date.now() + seconds * 1000
     });
-    callback({ addedBy: currentSong.addedBy, votes: results });
+    callback({ success: true });
   });
 
   // ─── Vote ──────────────────────────────────────────────────────────────────
@@ -757,8 +921,13 @@ io.on('connection', (socket) => {
     if (!contestant) return callback({ error: 'Not a contestant' });
 
     const currentSong = quiz.queue[quiz.currentIndex];
-    if (currentSong.addedBy === contestant.username) {
+    if (ownersOf(currentSong).includes(contestant.username)) {
       return callback({ error: 'You cannot vote on your own song' });
+    }
+
+    // Voting closes once the answer is revealed (manual or auto)
+    if (quiz.revealedIndices && quiz.revealedIndices.includes(quiz.currentIndex)) {
+      return callback({ error: 'Voting is closed — the answer was already revealed' });
     }
 
     const validTargets = Object.values(quiz.contestants).map(c => c.username);
@@ -773,7 +942,7 @@ io.on('connection', (socket) => {
     callback({ success: true });
 
     const eligibleVoters = Object.values(quiz.contestants)
-      .filter(c => c.username !== currentSong.addedBy);
+      .filter(c => !ownersOf(currentSong).includes(c.username));
     const currentVotes = quiz.votes[idx];
     const voteCount = Object.keys(currentVotes).length;
 
@@ -786,23 +955,7 @@ io.on('connection', (socket) => {
       eligibleVoters.every(c => currentVotes[c.username] !== undefined);
 
     if (allVoted) {
-      if (!quiz.revealedIndices) quiz.revealedIndices = [];
-      if (!quiz.revealedIndices.includes(idx)) {
-        quiz.revealedIndices.push(idx);
-        saveQuiz(quiz);
-      }
-      const results = {};
-      for (const [voter, voted] of Object.entries(currentVotes)) {
-        results[voter] = { votedFor: voted, correct: voted === currentSong.addedBy };
-      }
-      io.to(`quiz-${quizId}`).emit('answer-revealed', {
-        addedBy: currentSong.addedBy,
-        title: currentSong.title,
-        artist: currentSong.artist,
-        trackId: currentSong.trackId,
-        albumArt: currentSong.albumArt,
-        votes: results
-      });
+      revealCurrentSong(quizId, quiz);
     }
   });
 
@@ -820,6 +973,17 @@ io.on('connection', (socket) => {
 });
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
+
+// A queue entry's addedBy is an array of owner names (several contestants can
+// pick the same track). Older persisted quizzes stored a plain string.
+function ownersOf(song) {
+  if (Array.isArray(song.addedBy)) return song.addedBy;
+  return song.addedBy ? [song.addedBy] : [];
+}
+
+function ownersLabel(song) {
+  return ownersOf(song).join(' & ');
+}
 
 function sanitizeSong(song) {
   return {
@@ -841,6 +1005,7 @@ function sanitizeQuizForContestant(quiz) {
     id: quiz.id,
     name: quiz.name,
     songsPerPerson: quiz.songsPerPerson,
+    features: featuresOf(quiz),
     state: quiz.state,
     contestants: Object.values(quiz.contestants).map(c => ({
       username: c.username,
@@ -856,14 +1021,14 @@ function sanitizeQuizForContestant(quiz) {
 
 function calculateScores(quiz) {
   const scores = {};
-  for (const c of Object.values(quiz.contestants)) {
+  for (const c of Object.values(quiz.contestants || {})) {
     scores[c.username] = 0;
   }
-  for (const [idx, songVotes] of Object.entries(quiz.votes)) {
-    const song = quiz.queue[parseInt(idx)];
+  for (const [idx, songVotes] of Object.entries(quiz.votes || {})) {
+    const song = (quiz.queue || [])[parseInt(idx)];
     if (!song) continue;
     for (const [voter, votedFor] of Object.entries(songVotes)) {
-      if (votedFor === song.addedBy) {
+      if (ownersOf(song).includes(votedFor)) {
         scores[voter] = (scores[voter] || 0) + 1;
       }
     }

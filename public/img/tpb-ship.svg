@@ -1,6 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640">
-  <rect x="0" y="0" width="640" height="640" rx="96" fill="#111111"/>
-  <g transform="translate(20 75)">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 520">
   <defs>
     <mask id="sailMask">
       <rect width="640" height="520" fill="white"/>
@@ -11,7 +9,7 @@
       </g>
     </mask>
   </defs>
-  <g fill="#f0c000">
+  <g fill="#f0c000" opacity="0.12">
     <!-- bowsprit -->
     <path d="M150 296 L38 222 L52 210 L164 284 Z"/>
     <!-- masts -->
@@ -36,6 +34,5 @@
     <path d="M108 306 L584 306 L548 396 Q330 432 152 396 Z"/>
     <path d="M500 252 L588 252 L584 308 L500 308 Z"/>
     <path d="M108 306 L84 260 L132 288 Z"/>
-  </g>
   </g>
 </svg>

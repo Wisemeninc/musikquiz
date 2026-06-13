@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>OnlyMIP MusicQuiz - Join</title>
   <link rel="icon" type="image/svg+xml" href="/logo.svg">
-  <link rel="stylesheet" href="/style.css">
-  <script src="/theme.js"></script>
+  <link rel="stylesheet" href="/style.css?v=4">
+  <script src="/theme.js?v=3"></script>
 </head>
 <body>
   <div class="container">
@@ -46,17 +46,17 @@
       </div>
 
       <div class="card">
+        <h2>Your Songs (<span id="song-count">0</span>/<span id="song-max">3</span>)</h2>
+        <div id="my-songs"><p class="hint">No songs added yet</p></div>
+      </div>
+
+      <div class="card">
         <h2>Search Music</h2>
         <div class="search-box">
           <input type="text" id="search-input" placeholder="Search for a song or artist...">
           <button class="btn btn-secondary" onclick="searchMusic()">Search</button>
         </div>
         <div id="search-results"></div>
-      </div>
-
-      <div class="card">
-        <h2>Your Songs (<span id="song-count">0</span>/<span id="song-max">3</span>)</h2>
-        <div id="my-songs"><p class="hint">No songs added yet</p></div>
       </div>
 
       <div class="card">
@@ -77,6 +77,10 @@
 
       <div class="card" id="vote-card">
         <h2>Who picked this song?</h2>
+        <div id="countdown-box" class="countdown-box" style="display:none;">
+          <div class="countdown-label">Voting closes in <span id="countdown-num"></span>s</div>
+          <div class="countdown-track"><div id="countdown-fill" class="countdown-fill"></div></div>
+        </div>
         <div id="vote-buttons"></div>
         <p id="vote-status" class="hint"></p>
       </div>
@@ -91,6 +95,7 @@
           <p class="answer-song-artist" id="answer-song-artist"></p>
         </div>
         <p class="answer-reveal">Added by: <strong id="answer-name"></strong></p>
+        <div id="vote-distribution" class="vote-chart"></div>
         <div id="answer-votes"></div>
       </div>
 
@@ -105,6 +110,7 @@
       <div class="card">
         <h2>&#127942; Final Scoreboard</h2>
         <div id="scoreboard"></div>
+        <div id="awards-list"></div>
       </div>
       <div class="card">
         <h2>All Songs</h2>
@@ -118,6 +124,7 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
+  <script src="/shared.js?v=3"></script>
   <script>
     const socket = io();
     const quizId = window.location.pathname.split('/').pop();
@@ -127,15 +134,7 @@
     let hasVoted = false;
     let revealedSongs = [];
     let currentSongTrackId = null;
-
-    function escapeHtml(str) {
-      return String(str)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#x27;');
-    }
+    let quizFeatures = {};
 
     // Restore session — use localStorage so it survives tab close/reopen
     const savedUsername = localStorage.getItem(`quiz-${quizId}-username`);
@@ -148,6 +147,7 @@
         }
         myUsername = savedUsername;
         const quiz = response.quiz;
+        quizFeatures = quiz.features || {};
         document.getElementById('login-view').style.display = 'none';
         document.getElementById('quiz-title').textContent = quiz.name;
         document.getElementById('max-songs').textContent = quiz.songsPerPerson;
@@ -161,7 +161,7 @@
         }
 
         if (quiz.state === 'finished') {
-          showFinishedView(response.scores || [], response.songs || []);
+          showFinishedView(response.scores || [], response.songs || [], response.awards);
         } else if (quiz.state === 'playing') {
           // Restore vote status
           if (response.myVote) {
@@ -193,6 +193,7 @@
         myUsername = username;
         localStorage.setItem(`quiz-${quizId}-username`, username);
         const quiz = response.quiz;
+        quizFeatures = quiz.features || {};
 
         document.getElementById('login-view').style.display = 'none';
         document.getElementById('quiz-title').textContent = quiz.name;
@@ -208,7 +209,7 @@
         }
 
         if (quiz.state === 'finished') {
-          showFinishedView(response.scores || [], response.songs || []);
+          showFinishedView(response.scores || [], response.songs || [], response.awards);
         } else if (quiz.state === 'playing') {
           showPlayingView(quiz);
         } else {
@@ -323,8 +324,7 @@
 
     // Socket events
     socket.on('contestant-joined', ({ username, contestants: contestantList }) => {
-      contestants = contestantList;
-      updateContestantsList(contestantList.map(u => ({ username: u, songCount: 0 })));
+      updateContestantsList(contestantList);
     });
 
     socket.on('songs-updated', ({ contestants: contestantList }) => {
@@ -336,8 +336,13 @@
       showPlayingViewFromEvent(totalSongs, currentIndex, currentSong);
     });
 
+    socket.on('countdown-started', ({ seconds }) => {
+      showCountdown(seconds);
+    });
+
     socket.on('next-song', ({ currentIndex, currentSong, totalSongs, previousSong }) => {
       hasVoted = false;
+      hideCountdown();
       document.getElementById('answer-card').style.display = 'none';
       document.getElementById('answer-card').classList.remove('reveal-animate');
       document.getElementById('answer-song-info').style.display = 'none';
@@ -353,6 +358,7 @@
 
     socket.on('prev-song', ({ currentIndex, currentSong, totalSongs }) => {
       hasVoted = false;
+      hideCountdown();
       document.getElementById('answer-card').style.display = 'none';
       document.getElementById('answer-card').classList.remove('reveal-animate');
       document.getElementById('answer-song-info').style.display = 'none';
@@ -362,10 +368,21 @@
       renderVoteButtons();
     });
 
-    socket.on('answer-revealed', ({ addedBy, title, artist, trackId, albumArt, votes }) => {
+    socket.on('answer-revealed', ({ addedBy, title, artist, trackId, albumArt, votes, distribution }) => {
+      hideCountdown();
       document.getElementById('answer-card').style.display = 'block';
       document.getElementById('answer-card').classList.add('reveal-animate');
       document.getElementById('answer-name').textContent = addedBy;
+      renderVoteChart(quizFeatures.voteChart ? distribution : null, 'vote-distribution');
+      if (quizFeatures.effects) {
+        spawnConfetti();
+        const myResult = votes && votes[myUsername];
+        if (myResult) {
+          document.body.classList.add(myResult.correct ? 'flash-correct' : 'flash-wrong');
+          setTimeout(() => document.body.classList.remove('flash-correct', 'flash-wrong'), 1200);
+          if (myResult.correct && navigator.vibrate) navigator.vibrate([100, 60, 100]);
+        }
+      }
       if (albumArt) {
         document.getElementById('answer-cover-img').src = escapeHtml(albumArt);
         document.getElementById('answer-album-art').style.display = 'block';
@@ -391,8 +408,8 @@
       document.getElementById('answer-votes').innerHTML = votesHtml;
     });
 
-    socket.on('quiz-finished', ({ scores, songs }) => {
-      showFinishedView(scores, songs);
+    socket.on('quiz-finished', ({ scores, songs, awards }) => {
+      showFinishedView(scores, songs, awards);
     });
 
     // Playing view
@@ -448,10 +465,12 @@
       });
     }
 
-    function showFinishedView(scores, songs) {
+    function showFinishedView(scores, songs, awards) {
+      hideCountdown();
       document.getElementById('lobby-view').style.display = 'none';
       document.getElementById('playing-view').style.display = 'none';
       document.getElementById('finished-view').style.display = 'block';
+      renderAwards(awards, 'awards-list');  // server omits awards when the feature is off
 
       const html = scores.map((s, i) => {
         const medal = i === 0 ? '&#129351;' : i === 1 ? '&#129352;' : i === 2 ? '&#129353;' : '';

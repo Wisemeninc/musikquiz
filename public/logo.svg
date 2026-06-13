@@ -1,19 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1536 512" width="100%" height="100%">
-  <!-- OnlyFans signature cyan-blue background -->
-  <rect x="0" y="0" width="1536" height="512" rx="64" fill="#00AFF0"/>
+  <!-- OnlyFans signature cyan badge -->
+  <rect x="0" y="0" width="1536" height="512" rx="88" fill="#00AFF0"/>
 
-  <!-- White circle ring with music note icon (left side) -->
-  <g transform="translate(256, 256)">
-    <circle cx="0" cy="0" r="160" fill="none" stroke="#ffffff" stroke-width="32"/>
-    <!-- Music note inside -->
-    <rect x="28" y="-84" width="14" height="110" fill="#ffffff"/>
-    <path d="M 42 -84 Q 98 -70, 98 -14 Q 84 -42, 42 -44 Z" fill="#ffffff"/>
-    <ellipse cx="0" cy="30" rx="36" ry="25" fill="#ffffff" transform="rotate(-20)"/>
+  <!-- OnlyFans-style ring mark: white open ring + center dot -->
+  <g transform="translate(250, 256)">
+    <circle cx="0" cy="0" r="138" fill="none" stroke="#ffffff" stroke-width="40"/>
+    <circle cx="0" cy="0" r="42" fill="#ffffff"/>
   </g>
 
-  <!-- OnlyMIP wordmark, large and to the right -->
-  <text x="496" y="320" font-family="system-ui, -apple-system, 'Helvetica Neue', sans-serif"
-        font-weight="700" font-size="220" fill="#ffffff" letter-spacing="-4">
-    Only<tspan font-weight="900">MIP</tspan>
-  </text>
+  <!-- OnlyMIP wordmark, Only + heavier MIP -->
+  <text x="470" y="330" font-family="system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif"
+        font-weight="700" font-size="232" fill="#ffffff" letter-spacing="-8">Only<tspan font-weight="900">MIP</tspan></text>
 </svg>

@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>OnlyMIP MusicQuiz - Quiz Master</title>
   <link rel="icon" type="image/svg+xml" href="/logo.svg">
-  <link rel="stylesheet" href="/style.css">
-  <script src="/theme.js"></script>
+  <link rel="stylesheet" href="/style.css?v=4">
+  <script src="/theme.js?v=3"></script>
 </head>
 <body>
   <div class="container">
@@ -48,6 +48,16 @@
             <label for="songs-per-person">Songs per Person</label>
             <input type="number" id="songs-per-person" min="1" max="20" value="3" required>
           </div>
+          <fieldset class="features-fieldset">
+            <legend>Features</legend>
+            <label><input type="checkbox" id="feat-qr" checked> QR code for joining (link stays visible too)</label>
+            <label><input type="checkbox" id="feat-countdown" checked> Vote countdown — silent, visual only
+              <input type="number" id="feat-countdown-secs" min="5" max="300" value="30"> seconds</label>
+            <label><input type="checkbox" id="feat-effects" checked> Reveal effects (confetti, flash, vibration)</label>
+            <label><input type="checkbox" id="feat-votechart" checked> Vote distribution chart on reveal</label>
+            <label><input type="checkbox" id="feat-awards" checked> End-of-quiz awards</label>
+            <label><input type="checkbox" id="feat-soundboard" checked> Soundboard on master page (airhorn, drumroll&hellip;)</label>
+          </fieldset>
           <button type="submit" class="btn btn-primary">Create Quiz</button>
         </form>
       </div>
@@ -66,12 +76,15 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
+  <script src="/shared.js?v=3"></script>
   <script>
     const socket = io();
     let masterPassword = sessionStorage.getItem('master_password') || '';
 
     // Auto-unlock if password is saved in session
     if (masterPassword) {
+      // Hide the gate while auto-verifying so it doesn't flash on every load
+      document.getElementById('master-login-card').style.display = 'none';
       verifyPassword(masterPassword);
     }
 
@@ -83,11 +96,18 @@
     });
 
     async function verifyPassword(password) {
-      const res = await fetch('/api/auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password })
-      });
+      let res;
+      try {
+        res = await fetch('/api/auth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password })
+        });
+      } catch (e) {
+        // Network failure: re-show the gate so the page is never blank
+        document.getElementById('master-login-card').style.display = 'block';
+        return;
+      }
       if (res.ok) {
         masterPassword = password;
         sessionStorage.setItem('master_password', password);
@@ -95,6 +115,7 @@
         document.getElementById('master-panel').style.display = 'block';
         loadQuizHistory();
       } else {
+        document.getElementById('master-login-card').style.display = 'block';
         document.getElementById('master-login-error').textContent = 'Wrong password';
         document.getElementById('master-login-error').style.display = 'block';
         sessionStorage.removeItem('master_password');
@@ -123,8 +144,8 @@
         return `<div class="quiz-history-entry" id="entry-${q.id}">
           <div class="quiz-history-item" onclick="toggleQuizSongs('${q.id}', this)">
             <div class="quiz-history-info">
-              <span class="quiz-history-name">${q.name}</span>
-              <span class="quiz-history-meta">${q.id} &middot; ${q.contestants.length} players &middot; ${q.songCount} songs &middot; ${date}</span>
+              <span class="quiz-history-name">${escapeHtml(q.name)}</span>
+              <span class="quiz-history-meta">${escapeHtml(q.id)} &middot; ${q.contestants.length} players &middot; ${q.songCount} songs &middot; ${date}</span>
             </div>
             <div class="quiz-history-actions">
               ${resumeBtn}
@@ -180,14 +201,14 @@
         return;
       }
       const songsHtml = data.songs.map((s, i) => {
-        const spotifyUrl = `https://open.spotify.com/track/${s.trackId}`;
+        const spotifyUrl = `https://open.spotify.com/track/${escapeHtml(s.trackId)}`;
         return `<div class="quiz-song-row">
-          <img class="quiz-song-cover" src="${s.albumArt || ''}" alt="" />
+          <img class="quiz-song-cover" src="${escapeHtml(s.albumArt || '')}" alt="" />
           <div class="quiz-song-details">
-            <a href="${spotifyUrl}" target="_blank" rel="noopener" class="quiz-song-title">${s.title}</a>
-            <span class="quiz-song-artist">${s.artist}</span>
+            <a href="${spotifyUrl}" target="_blank" rel="noopener" class="quiz-song-title">${escapeHtml(s.title)}</a>
+            <span class="quiz-song-artist">${escapeHtml(s.artist)}</span>
           </div>
-          <span class="quiz-song-added-by">${s.addedBy}</span>
+          <span class="quiz-song-added-by">${escapeHtml(s.addedBy)}</span>
         </div>`;
       }).join('');
       container.innerHTML = songsHtml;
@@ -198,8 +219,17 @@
       e.preventDefault();
       const quizName = document.getElementById('quiz-name').value;
       const songsPerPerson = parseInt(document.getElementById('songs-per-person').value);
+      const features = {
+        qr: document.getElementById('feat-qr').checked,
+        countdown: document.getElementById('feat-countdown').checked,
+        countdownSeconds: parseInt(document.getElementById('feat-countdown-secs').value, 10) || 30,
+        effects: document.getElementById('feat-effects').checked,
+        voteChart: document.getElementById('feat-votechart').checked,
+        awards: document.getElementById('feat-awards').checked,
+        soundboard: document.getElementById('feat-soundboard').checked
+      };
 
-      socket.emit('create-quiz', { quizName, songsPerPerson, password: masterPassword }, (response) => {
+      socket.emit('create-quiz', { quizName, songsPerPerson, password: masterPassword, features }, (response) => {
         if (response.quizId) {
           window.location.href = `/master/${response.quizId}`;
         }
